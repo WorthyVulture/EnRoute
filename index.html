@@ -519,10 +519,15 @@ function fmtClock(mins){
   var hh = h%12; if(hh===0) hh=12;
   return {hm: hh+":"+(m<10?"0"+m:m), ap: ap};
 }
+function dateToISO(d){
+  var pad=function(x){return (x<10?"0":"")+x;};
+  return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+}
+function todayISO(){ return dateToISO(new Date()); }
 function addDaysISO(iso, n){
   var d = new Date(iso+"T00:00:00");
   d.setDate(d.getDate()+n);
-  return d.toISOString().slice(0,10);
+  return dateToISO(d);
 }
 function diffDaysISO(a,b){
   var d1=new Date(a+"T00:00:00"), d2=new Date(b+"T00:00:00");
@@ -539,6 +544,11 @@ function fmtDur(min){
   return h+"H"+(m?" "+m+"M":"");
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function formatMoney(amount, currency){
+  if(amount==null) return "—";
+  var symbol = currency==="INR" ? "₹" : (currency ? currency+" " : "");
+  return symbol+Math.round(amount).toLocaleString();
+}
 
 /* Age-based max comfortable drive stretch before a break, in minutes */
 function ageBreakLimitMinutes(minAge, maxAge){
@@ -571,6 +581,11 @@ function saveTrips(trips){
 /* ============================================================
    GOOGLE MAPS INTEGRATION (Places API (New) + Routes API)
 ============================================================ */
+/* No API gives a real fuel cost — this is a plain distance/mileage/price formula, always
+   labeled as an assumption in the UI rather than mixed in with the live Google Maps numbers. */
+var FUEL_EFFICIENCY_KMPL = 15;
+var FUEL_PRICE_PER_LITRE = 100;
+
 var MAPS_KEY_STORAGE = "enroute_google_maps_key";
 function getMapsKey(){
   try{ return (localStorage.getItem(MAPS_KEY_STORAGE) || "").trim(); }catch(e){ return ""; }
@@ -596,16 +611,20 @@ function placesAutocomplete(input, sessionToken){
   }).catch(function(){ return []; });
 }
 
+function photoUrlFor(photos, maxWidth){
+  if(!photos || !photos.length || !photos[0].name) return null;
+  return "https://places.googleapis.com/v1/"+photos[0].name+"/media?maxWidthPx="+(maxWidth||480)+"&key="+encodeURIComponent(getMapsKey());
+}
 function placeDetails(placeId, sessionToken){
   var key = getMapsKey();
   if(!key || !placeId) return Promise.resolve(null);
   var url = "https://places.googleapis.com/v1/places/"+encodeURIComponent(placeId)+
     (sessionToken ? ("?sessionToken="+encodeURIComponent(sessionToken)) : "");
   return fetch(url, {
-    headers:{"X-Goog-Api-Key":key, "X-Goog-FieldMask":"id,displayName,location,formattedAddress"}
+    headers:{"X-Goog-Api-Key":key, "X-Goog-FieldMask":"id,displayName,location,formattedAddress,photos"}
   }).then(function(r){ return r.json(); }).then(function(data){
     if(!data || !data.location) return null;
-    return {lat:data.location.latitude, lng:data.location.longitude, formattedAddress:data.formattedAddress||""};
+    return {lat:data.location.latitude, lng:data.location.longitude, formattedAddress:data.formattedAddress||"", photoUrl:photoUrlFor(data.photos, 800)};
   }).catch(function(){ return null; });
 }
 
@@ -630,7 +649,7 @@ function nearbyRestaurants(lat, lon, radiusMeters){
     method:"POST",
     headers:{
       "Content-Type":"application/json", "X-Goog-Api-Key":key,
-      "X-Goog-FieldMask":"places.displayName,places.rating,places.userRatingCount,places.formattedAddress"
+      "X-Goog-FieldMask":"places.displayName,places.rating,places.userRatingCount,places.formattedAddress,places.photos"
     },
     body: JSON.stringify({
       includedTypes:["restaurant"],
@@ -648,20 +667,24 @@ function computeRoute(originLat, originLon, destLat, destLon){
     method:"POST",
     headers:{
       "Content-Type":"application/json", "X-Goog-Api-Key":key,
-      "X-Goog-FieldMask":"routes.duration,routes.distanceMeters,routes.staticDuration"
+      "X-Goog-FieldMask":"routes.duration,routes.distanceMeters,routes.staticDuration,routes.travelAdvisory.tollInfo"
     },
     body: JSON.stringify({
       origin:{location:{latLng:{latitude:originLat, longitude:originLon}}},
       destination:{location:{latLng:{latitude:destLat, longitude:destLon}}},
       travelMode:"DRIVE",
-      routingPreference:"TRAFFIC_AWARE"
+      routingPreference:"TRAFFIC_AWARE",
+      extraComputations:["TOLLS"]
     })
   }).then(function(r){ return r.json(); }).then(function(d){
     var route = d.routes && d.routes[0];
     if(!route || !route.duration) return null;
+    var tollPrice = route.travelAdvisory && route.travelAdvisory.tollInfo && route.travelAdvisory.tollInfo.estimatedPrice && route.travelAdvisory.tollInfo.estimatedPrice[0];
     return {
       durationSec: parseInt(route.duration,10),
-      distanceMeters: route.distanceMeters
+      distanceMeters: route.distanceMeters,
+      tollUnits: tollPrice ? (parseInt(tollPrice.units||0,10) + (tollPrice.nanos||0)/1e9) : null,
+      tollCurrency: tollPrice ? tollPrice.currencyCode : null
     };
   }).catch(function(){ return null; });
 }
@@ -678,17 +701,22 @@ function resolvePlaceGeo(text, cachedPlace){
   return geocodeText(text.trim());
 }
 
+function estimateDriveMinutes(originGeo, destGeo){
+  if(!originGeo || !destGeo) return 240;
+  var avgSpeed = 42, roadFactor = 1.32;
+  var km = haversineKm(originGeo.lat,originGeo.lon,destGeo.lat,destGeo.lon)*roadFactor;
+  return Math.round(km/avgSpeed*60);
+}
 /* Resolve drive distance/duration between two resolved points: live traffic-aware
    route when a Maps key is configured, otherwise the straight-line estimate. */
 function resolveRouting(originGeo, destGeo){
-  var avgSpeed = 42, roadFactor = 1.32;
-  var fallbackKm = (originGeo && destGeo) ? haversineKm(originGeo.lat,originGeo.lon,destGeo.lat,destGeo.lon)*roadFactor : null;
-  var fallbackMin = fallbackKm ? Math.round(fallbackKm/avgSpeed*60) : 240;
-  var fallback = {km:fallbackKm, min:fallbackMin, source:"estimated"};
+  var fallbackKm = (originGeo && destGeo) ? haversineKm(originGeo.lat,originGeo.lon,destGeo.lat,destGeo.lon)*1.32 : null;
+  var fallbackMin = estimateDriveMinutes(originGeo, destGeo);
+  var fallback = {km:fallbackKm, min:fallbackMin, source:"estimated", tollUnits:null, tollCurrency:null};
   if(!originGeo || !destGeo || !hasMapsKey()) return Promise.resolve(fallback);
   return computeRoute(originGeo.lat, originGeo.lon, destGeo.lat, destGeo.lon).then(function(res){
     if(!res) return fallback;
-    return {km: res.distanceMeters/1000, min: Math.max(1,Math.round(res.durationSec/60)), source:"live"};
+    return {km: res.distanceMeters/1000, min: Math.max(1,Math.round(res.durationSec/60)), source:"live", tollUnits:res.tollUnits, tollCurrency:res.tollCurrency};
   });
 }
 
@@ -709,6 +737,7 @@ function resolveNearbyFood(destGeo){
         title: p.displayName.text,
         subtitle: ratingSubtitle(p),
         reviewCount: p.userRatingCount||0,
+        photoUrl: photoUrlFor(p.photos),
         score: p.rating * Math.log(1+(p.userRatingCount||0))
       };
     }).sort(function(a,b){ return b.score-a.score; });
@@ -719,7 +748,7 @@ function pickRealFood(list, usedTitles){
   if(!candidates.length) return null;
   var pick = candidates[0];
   usedTitles.push(pick.title);
-  return {title:pick.title, subtitle:pick.subtitle};
+  return {title:pick.title, subtitle:pick.subtitle, photoUrl:pick.photoUrl||null};
 }
 /* The single most-reviewed spot in the list — a proxy for "everyone's talking about this place"
    since Google has no actual social-virality signal. Needs a high review count to qualify. */
@@ -729,7 +758,33 @@ function pickViralFood(list, usedTitles){
   candidates.sort(function(a,b){ return b.reviewCount-a.reviewCount; });
   var pick = candidates[0];
   usedTitles.push(pick.title);
-  return {title:pick.title, subtitle:pick.subtitle};
+  return {title:pick.title, subtitle:pick.subtitle, photoUrl:pick.photoUrl||null};
+}
+
+/* One suggested fuel stop per break on a leg, positioned by linear-interpolating the
+   route at the same time-fraction buildDriveSegment will place that break. Scoped to
+   the outbound leg only to keep the extra Places calls bounded. */
+function resolveFuelStops(originGeo, destGeo, legMin, maxStretch){
+  if(!hasMapsKey() || !originGeo || !destGeo) return Promise.resolve([]);
+  var fractions = [], remaining = legMin, covered = 0;
+  while(remaining > maxStretch){ covered += maxStretch; fractions.push(covered/legMin); remaining -= maxStretch; }
+  if(!fractions.length) return Promise.resolve([]);
+  return Promise.all(fractions.map(function(frac){
+    var pt = {lat: originGeo.lat+(destGeo.lat-originGeo.lat)*frac, lon: originGeo.lon+(destGeo.lon-originGeo.lon)*frac};
+    return fetch("https://places.googleapis.com/v1/places:searchNearby", {
+      method:"POST",
+      headers:{"Content-Type":"application/json", "X-Goog-Api-Key":getMapsKey(), "X-Goog-FieldMask":"places.displayName,places.formattedAddress"},
+      body: JSON.stringify({
+        includedTypes:["gas_station"],
+        maxResultCount:3,
+        locationRestriction:{circle:{center:{latitude:pt.lat, longitude:pt.lon}, radius:8000}}
+      })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      var p = d.places && d.places[0];
+      if(!p || !p.displayName) return null;
+      return {title:p.displayName.text, subtitle:(p.formattedAddress||"Fuel stop near this break.")};
+    }).catch(function(){ return null; });
+  }));
 }
 
 /* A popular tourist_attraction near the midpoint of a long drive — a "slight detour" suggestion.
@@ -744,7 +799,7 @@ function resolveOnTheWaySpot(originGeo, destGeo, trip, usedTitles){
     method:"POST",
     headers:{
       "Content-Type":"application/json", "X-Goog-Api-Key":getMapsKey(),
-      "X-Goog-FieldMask":"places.displayName,places.rating,places.userRatingCount,places.formattedAddress"
+      "X-Goog-FieldMask":"places.displayName,places.rating,places.userRatingCount,places.formattedAddress,places.photos"
     },
     body: JSON.stringify({
       includedTypes:["tourist_attraction"],
@@ -760,7 +815,7 @@ function resolveOnTheWaySpot(originGeo, destGeo, trip, usedTitles){
     candidates.sort(function(a,b){ return (b.userRatingCount||0)-(a.userRatingCount||0); });
     var pick = candidates[0];
     usedTitles.push(pick.displayName.text);
-    return {title:pick.displayName.text, subtitle: ratingSubtitle(pick)+" — a popular detour on the way."};
+    return {title:pick.displayName.text, subtitle: ratingSubtitle(pick)+" — a popular detour on the way.", photoUrl:photoUrlFor(pick.photos)};
   }).catch(function(){ return null; });
 }
 
@@ -829,7 +884,7 @@ function genericStop(destName, interests, kind){
   return {title:tag+" spot near "+destName, subtitle:"A short detour worth the stop — check recent reviews before you go."};
 }
 
-function buildDriveSegment(items, curMinRef, remainingMin, maxStretch, destLabel, kmTotal){
+function buildDriveSegment(items, curMinRef, remainingMin, maxStretch, destLabel, kmTotal, fuelStops){
   var totalMin = remainingMin;
   var covered = 0;
   var breaks = 0;
@@ -850,6 +905,8 @@ function buildDriveSegment(items, curMinRef, remainingMin, maxStretch, destLabel
       subtitle:"Quick stop — stretch, hydrate, use the washroom.",
       isBreak:true
     });
+    var fuelStop = fuelStops && fuelStops.length ? fuelStops.shift() : null;
+    if(fuelStop) items.push({time:curMinRef.v, category:"FUEL", title:fuelStop.title, subtitle:fuelStop.subtitle});
     breaks++;
     curMinRef.v += 20;
     remainingMin -= chunk;
@@ -876,17 +933,26 @@ function generateItinerary(trip){
   return Promise.all([
     resolvePlaceGeo(trip.destination, trip.destinationPlace),
     resolvePlaceGeo(trip.departureLocation, trip.departurePlace),
-    resolvePlaceGeo(trip.returnLocation, trip.returnPlace)
+    resolvePlaceGeo(trip.returnLocation, trip.returnPlace),
+    resolvePlaceGeo(trip.stopoverLocation, trip.stopoverPlace)
   ]).then(function(geos){
-    var destGeo = geos[0], originGeo = geos[1], returnGeoRaw = geos[2];
+    var destGeo = geos[0], originGeo = geos[1], returnGeoRaw = geos[2], stopoverGeoRaw = geos[3];
     var destKey = destGeo ? destGeo.name : null;
+    // A stopover only makes sense with enough days to actually spend one there.
+    var hasStopover = !!(stopoverGeoRaw && dayCount>=3);
+    var stopoverGeo = hasStopover ? stopoverGeoRaw : null;
+    var stopoverLabel = capitalize(trip.stopoverLocation) || "your stop";
+    // The leg that arrives at the destination starts from the stopover when there is one.
+    var legOriginGeo = stopoverGeo || originGeo;
 
     return Promise.all([
-      resolveRouting(originGeo, destGeo),
+      resolveRouting(legOriginGeo, destGeo),
       resolveNearbyFood(destGeo),
-      resolveOnTheWaySpot(originGeo, destGeo, trip, usedTitles)
+      resolveOnTheWaySpot(legOriginGeo, destGeo, trip, usedTitles),
+      resolveFuelStops(legOriginGeo, destGeo, estimateDriveMinutes(legOriginGeo, destGeo), maxStretch),
+      hasStopover ? resolveRouting(originGeo, stopoverGeo) : Promise.resolve(null)
     ]).then(function(res){
-      var outboundRouting = res[0], realFood = res[1], onTheWaySpot = res[2];
+      var outboundRouting = res[0], realFood = res[1], onTheWaySpot = res[2], fuelStops = res[3], preRouting = res[4];
       var sameReturn = !returnGeoRaw;
       var returnGeo = returnGeoRaw || originGeo;
 
@@ -894,7 +960,7 @@ function generateItinerary(trip){
       return backRoutingPromise.then(function(backRouting){
         var outboundKm = outboundRouting.km, outboundMin = outboundRouting.min;
         var backKm = backRouting.km, backMin = backRouting.min;
-        var routingSource = (outboundRouting.source==="live" || backRouting.source==="live") ? "live" : "estimated";
+        var routingSource = (outboundRouting.source==="live" || backRouting.source==="live" || (preRouting && preRouting.source==="live")) ? "live" : "estimated";
         var realFoodUsed = false;
         var viralPick = pickViralFood(realFood, usedTitles);
         if(viralPick) realFoodUsed = true;
@@ -903,45 +969,57 @@ function generateItinerary(trip){
         for(var d=0; d<dayCount; d++){
           var dateISO = addDaysISO(trip.startDate, d);
           var items = [];
-          var isFirst = d===0, isLast = d===dayCount-1 && dayCount>1;
+          var isStopoverDay = hasStopover && d===0;
+          var isFirst = d === (hasStopover ? 1 : 0);
+          var isLast = d===dayCount-1 && dayCount>1;
 
-          if(isFirst){
-            var cur = {v: minutesFromTimeStr(trip.departureTime)};
+          if(isStopoverDay){
+            var curS = {v: minutesFromTimeStr(trip.departureTime)};
+            items.push({
+              time:curS.v, category:"DEPART",
+              title:"Leave from "+(trip.departureLocation || "home"),
+              subtitle: trip.goals ? "Keep in mind: "+trip.goals : "Keep snacks and water within reach for the road."
+            });
+            buildDriveSegment(items, curS, preRouting.min, maxStretch, stopoverLabel, preRouting.km);
+            var stopStayTime = Math.max(curS.v+30, 19*60);
+            items.push({time:stopStayTime, category:"STAY", title:"Overnight stop in "+stopoverLabel, subtitle:"A quick overnight before continuing to "+destLabel+" tomorrow."});
+          } else if(isFirst){
+            var cur = {v: hasStopover ? 9*60 : minutesFromTimeStr(trip.departureTime)};
             var outboundStart = cur.v;
             items.push({
               time:cur.v, category:"DEPART",
-              title:"Leave from "+(trip.departureLocation || "home"),
+              title: hasStopover ? ("Leave "+stopoverLabel+" for "+destLabel) : ("Leave from "+(trip.departureLocation || "home")),
               subtitle: trip.goals ? "Keep in mind: "+trip.goals : "Keep snacks and water within reach for the road."
             });
             if(dayCount===1){
               // same-day trip: drive there, activity, drive back
-              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm);
-              if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle});
+              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops);
+              if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle, photoUrl:onTheWaySpot.photoUrl});
               var act = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING") ;
               cur.v += 60;
               if(act) items.push({time:cur.v, category:act.category, title:act.title, subtitle:act.subtitle});
               else { var g=genericStop(destLabel, trip.interests,"sight"); items.push({time:cur.v, category:"SIGHTSEEING", title:g.title, subtitle:g.subtitle}); }
-              if(viralPick) items.push({time:cur.v+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle});
+              if(viralPick) items.push({time:cur.v+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle, photoUrl:viralPick.photoUrl});
               cur.v += 150;
               var returnKm = outboundKm;
               buildDriveSegment(items, cur, outboundMin, maxStretch, (trip.returnLocation||trip.departureLocation||"home"), returnKm);
             } else {
-              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm);
-              if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle});
+              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops);
+              if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle, photoUrl:onTheWaySpot.photoUrl});
               cur.v += 60;
               var act1 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING");
               if(act1) items.push({time:cur.v, category:act1.category, title:act1.title, subtitle:act1.subtitle});
               else { var g1=genericStop(destLabel, trip.interests,"sight"); items.push({time:cur.v, category:"SIGHTSEEING", title:g1.title, subtitle:g1.subtitle}); }
               var stayTime = Math.max(cur.v+150, 19*60);
               items.push({time:stayTime, category:"STAY", title:"Check in, "+(STAY_LABELS[trip.stayType]||"stay").toLowerCase(), subtitle: trip.stayNotes || "Settle in and rest up for tomorrow."});
-              if(viralPick) items.push({time:stayTime+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle});
+              if(viralPick) items.push({time:stayTime+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle, photoUrl:viralPick.photoUrl});
             }
           } else if(isLast){
             var cur2 = {v: 9*60};
             var bfReal = pickRealFood(realFood, usedTitles);
             if(bfReal) realFoodUsed = true;
             var bf = bfReal || pickCurated(destKey, usedTitles, trip.interests, "BREAKFAST");
-            if(bf) items.push({time:cur2.v, category:"BREAKFAST", title:bf.title, subtitle:bf.subtitle});
+            if(bf) items.push({time:cur2.v, category:"BREAKFAST", title:bf.title, subtitle:bf.subtitle, photoUrl:bf.photoUrl});
             else { var gb=genericStop(destLabel, trip.interests,"breakfast"); items.push({time:cur2.v, category:"BREAKFAST", title:gb.title, subtitle:gb.subtitle}); }
             items.push({time:cur2.v+60, category:"CHECKOUT", title:"Check out", subtitle:"Settle up and pack the car."});
             cur2.v += 90;
@@ -956,7 +1034,7 @@ function generateItinerary(trip){
             var bf2Real = pickRealFood(realFood, usedTitles);
             if(bf2Real) realFoodUsed = true;
             var bf2 = bf2Real || pickCurated(destKey, usedTitles, trip.interests, "BREAKFAST");
-            if(bf2) items.push({time:cur3.v, category:"BREAKFAST", title:bf2.title, subtitle:bf2.subtitle});
+            if(bf2) items.push({time:cur3.v, category:"BREAKFAST", title:bf2.title, subtitle:bf2.subtitle, photoUrl:bf2.photoUrl});
             else { var gb2=genericStop(destLabel, trip.interests,"breakfast"); items.push({time:cur3.v, category:"BREAKFAST", title:gb2.title, subtitle:gb2.subtitle}); }
             cur3.v += 90;
             var s1 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING") || pickCurated(destKey, usedTitles, trip.interests, "WILDLIFE");
@@ -966,7 +1044,7 @@ function generateItinerary(trip){
             var f1Real = pickRealFood(realFood, usedTitles);
             if(f1Real) realFoodUsed = true;
             var f1 = f1Real || pickCurated(destKey, usedTitles, trip.interests, "FOOD");
-            if(f1) items.push({time:cur3.v, category:"FOOD", title:f1.title, subtitle:f1.subtitle});
+            if(f1) items.push({time:cur3.v, category:"FOOD", title:f1.title, subtitle:f1.subtitle, photoUrl:f1.photoUrl});
             else { var gf=genericStop(destLabel, trip.interests,"food"); items.push({time:cur3.v, category:"FOOD", title:gf.title, subtitle:gf.subtitle}); }
             cur3.v += 240;
             var s2 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING");
@@ -986,12 +1064,20 @@ function generateItinerary(trip){
             if(item.isBreak) totalBreaks++;
           });
         });
+        var totalToll = null, tollCurrency = null;
+        if(outboundRouting.tollUnits!=null){ totalToll = (totalToll||0) + outboundRouting.tollUnits; tollCurrency = outboundRouting.tollCurrency; }
+        if(backRouting.tollUnits!=null){ totalToll = (totalToll||0) + backRouting.tollUnits; tollCurrency = tollCurrency || backRouting.tollCurrency; }
+        if(preRouting && preRouting.tollUnits!=null){ totalToll = (totalToll||0) + preRouting.tollUnits; tollCurrency = tollCurrency || preRouting.tollCurrency; }
+        var estFuelCost = totalKm>0 ? Math.round(totalKm/FUEL_EFFICIENCY_KMPL*FUEL_PRICE_PER_LITRE) : null;
+
         var stats = {
           totalDriveMin: totalDriveMin,
           totalKm: Math.round(totalKm),
           totalBreaks: totalBreaks,
           dayCount: dayCount,
-          maxStretchMin: maxStretch
+          maxStretchMin: maxStretch,
+          totalToll: totalToll, tollCurrency: tollCurrency,
+          estFuelCost: estFuelCost
         };
         return {days: days, stats: stats, routingSource: routingSource, foodSource: realFoodUsed ? "live" : "none"};
       });
@@ -1014,7 +1100,7 @@ var state = {
 };
 
 var STEPS = ["basics","window","intention","travelers","goals","food","stay","interests","review"];
-var PLACE_FIELD_MAP = {destination:"destinationPlace", departureLocation:"departurePlace", returnLocation:"returnPlace"};
+var PLACE_FIELD_MAP = {destination:"destinationPlace", departureLocation:"departurePlace", returnLocation:"returnPlace", stopoverLocation:"stopoverPlace"};
 
 function newWizard(prefillDest){
   return {
@@ -1024,6 +1110,7 @@ function newWizard(prefillDest){
       startDate:"", endDate:"",
       departureLocation:"", departurePlace:null, departureTime:"08:00",
       returnLocation:"", returnPlace:null, returnTime:"20:00",
+      stopoverLocation:"", stopoverPlace:null,
       intention:"leisure",
       travelers:2, ages:[30,30],
       goals:"",
@@ -1074,6 +1161,7 @@ function categoryIcon(cat){
   if(c==="CHECKOUT") return '<svg '+s+'><path d="M9 3H5v18h4"/><path d="M12 8l5 4-5 4"/><path d="M9 12h8"/></svg>';
   if(c==="DETOUR") return '<svg '+s+'><path d="M12 21s-7-6.2-7-11.2A7 7 0 0119 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.3"/></svg>';
   if(c==="TRENDING") return '<svg '+s+'><path d="M12 2c1 3-3 4-3 7a3 3 0 006 0c0-1-.5-1.7-1-2.3.7.3 2 1.6 2 4.3a4 4 0 01-8 0c0-4 3-5.5 4-9z"/></svg>';
+  if(c==="FUEL") return '<svg '+s+'><path d="M4 21V6a2 2 0 012-2h6a2 2 0 012 2v15"/><path d="M4 11h10"/><path d="M14 8h2.5L19 10.5V17a1.5 1.5 0 01-3 0v-2a1 1 0 00-1-1h-1"/><path d="M2 21h14"/></svg>';
   return '<svg '+s+'><circle cx="12" cy="12" r="3"/></svg>';
 }
 
@@ -1119,7 +1207,7 @@ function renderHome(){
   html += '<div class="section-head"><h3>Upcoming</h3></div>';
   if(upcoming){
     var theme = themeFor(upcoming);
-    var daysAway = diffDaysISO(new Date().toISOString().slice(0,10), upcoming.startDate);
+    var daysAway = diffDaysISO(todayISO(), upcoming.startDate);
     var badge = daysAway>1 ? "In "+daysAway+" days" : (daysAway===1?"Tomorrow":(daysAway===0?"Today":"Started"));
     html += '<div class="upcoming-card" data-action="open-trip" data-id="'+upcoming.id+'">';
     html += '<div class="hero-ph" style="background:'+heroGrad(theme)+'">'+heroMotif(theme.motif)+'</div>';
@@ -1292,6 +1380,7 @@ function renderWizard(){
     html += fieldTime("Departure time","departureTime", d.departureTime);
     html += fieldPlaceAutocomplete("Return location","returnLocation", d.returnLocation, "Leave blank if same as departure");
     html += fieldTime("Target return time","returnTime", d.returnTime);
+    html += fieldPlaceAutocomplete("Add a stop along the way (optional)","stopoverLocation", d.stopoverLocation, "A city roughly on the route — needs a 3+ day trip");
   }
   else if(step==="intention"){
     html += '<h2 class="wizard-title">What is this trip for?</h2><p class="wizard-sub">Pick what best describes the trip intent.</p>';
@@ -1330,7 +1419,10 @@ function renderWizard(){
     html += '<h2 class="wizard-title">Review your trip</h2><p class="wizard-sub">Everything below will be used to build your itinerary.</p>';
     html += reviewBlock("Destination", capitalize(d.destination)||"—");
     html += reviewBlock("Dates", (d.startDate&&d.endDate)?(fmtDateShort(d.startDate)+" – "+fmtDateShort(d.endDate)):"—");
-    html += reviewBlock("Route", (d.departureLocation||"—")+" → "+(capitalize(d.destination)||"—")+" → "+(d.returnLocation||d.departureLocation||"—"));
+    html += reviewBlock("Route", (d.departureLocation||"—")+(d.stopoverLocation?(" → "+d.stopoverLocation):"")+" → "+(capitalize(d.destination)||"—")+" → "+(d.returnLocation||d.departureLocation||"—"));
+    if(d.stopoverLocation && d.startDate && d.endDate && (diffDaysISO(d.startDate,d.endDate)+1)<3){
+      html += '<div class="info-note">A stop along the way needs at least a 3-day trip to fit — with the current dates it will be skipped.</div>';
+    }
     html += reviewBlock("Intention", INTENTION_LABELS[d.intention]);
     html += reviewBlock("Travelers", d.travelers+" ("+d.ages.join(", ")+" yrs)");
     html += reviewBlock("Goals", d.goals || "—");
@@ -1407,7 +1499,12 @@ function renderTimeline(){
   var day = trip.days[state.activeDay] || trip.days[0];
   var html = '';
   html += '<div class="tl-hero" style="background:'+heroGrad(theme)+'">';
-  html += heroMotif(theme.motif);
+  if(trip.destinationPlace && trip.destinationPlace.photoUrl){
+    html += '<img src="'+esc(trip.destinationPlace.photoUrl)+'" alt="" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">';
+    html += '<div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.1), rgba(0,0,0,0.35));"></div>';
+  } else {
+    html += heroMotif(theme.motif);
+  }
   html += '<button class="icon-btn" data-action="nav" data-target="trips" style="background:rgba(255,255,255,0.85); border:none; position:relative; z-index:2;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>';
   html += '<button class="icon-btn" data-action="toggle-more" style="background:rgba(255,255,255,0.85); border:none; position:relative; z-index:2;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/></svg></button>';
   html += '</div>';
@@ -1431,7 +1528,13 @@ function renderTimeline(){
     html += '<div class="tl-item">';
     html += '<div class="tl-time"><span class="hm">'+t.hm+'</span><span class="ap">'+t.ap+'</span></div>';
     html += '<div class="tl-marker"><div class="tl-dot"></div>'+(i<day.items.length-1?'<div class="tl-line"></div>':'')+'</div>';
-    html += '<div class="tl-content"><p class="tl-cat">'+categoryIcon(item.category)+'<span>'+esc(item.category)+'</span></p><p class="tl-item-title">'+esc(item.title)+'</p><p class="tl-item-sub">'+esc(item.subtitle)+'</p></div>';
+    html += '<div class="tl-content"><p class="tl-cat">'+categoryIcon(item.category)+'<span>'+esc(item.category)+'</span></p>';
+    if(item.photoUrl){
+      html += '<div style="display:flex; gap:12px; align-items:flex-start;"><div style="flex:1; min-width:0;"><p class="tl-item-title">'+esc(item.title)+'</p><p class="tl-item-sub">'+esc(item.subtitle)+'</p></div><img src="'+esc(item.photoUrl)+'" alt="" loading="lazy" style="width:64px; height:64px; border-radius:12px; object-fit:cover; flex:none;"></div>';
+    } else {
+      html += '<p class="tl-item-title">'+esc(item.title)+'</p><p class="tl-item-sub">'+esc(item.subtitle)+'</p>';
+    }
+    html += '</div>';
     html += '</div>';
   });
   html += '<div class="tl-actions">';
@@ -1440,6 +1543,9 @@ function renderTimeline(){
   html += '</div>';
   html += '<div class="tl-actions">';
   html += '<button class="tl-action-btn" data-action="export-pdf">Export PDF</button>';
+  html += '<button class="tl-action-btn" data-action="export-ics">Add to Calendar</button>';
+  html += '</div>';
+  html += '<div class="tl-actions">';
   html += '<button class="tl-action-btn primary" data-action="nav" data-target="home">Back to home</button>';
   html += '</div>';
   html += '</div>';
@@ -1464,6 +1570,10 @@ function renderSummary(){
   html += '<div class="route-strip">';
   html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(trip.departureLocation||"Home")+'</span></div>';
   html += '<div class="route-line"></div>';
+  if(trip.stopoverLocation && stats.dayCount>=3){
+    html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(trip.stopoverLocation)+'</span></div>';
+    html += '<div class="route-line"></div>';
+  }
   html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(capitalize(trip.destination))+'</span></div>';
   html += '<div class="route-line"></div>';
   html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(trip.returnLocation||trip.departureLocation||"Home")+'</span></div>';
@@ -1475,6 +1585,12 @@ function renderSummary(){
   html += '<div class="stat-card"><span class="stat-num" style="color:'+theme.accent+'">'+(stats.totalKm?("~"+stats.totalKm+" km"):"—")+'</span><span class="stat-label">'+(isLive?"Distance (Google Maps)":"Est. distance covered")+'</span></div>';
   html += '<div class="stat-card"><span class="stat-num" style="color:'+theme.accent+'">'+stats.totalBreaks+'</span><span class="stat-label">Break stops planned</span></div>';
   html += '<div class="stat-card"><span class="stat-num" style="color:'+theme.accent+'">'+trip.travelers+'</span><span class="stat-label">Traveler'+(trip.travelers>1?"s":"")+'</span></div>';
+  if(isLive){
+    html += '<div class="stat-card"><span class="stat-num" style="color:'+theme.accent+'">'+(stats.totalToll!=null ? formatMoney(stats.totalToll, stats.tollCurrency) : "None found")+'</span><span class="stat-label">Toll (Google Maps)</span></div>';
+  }
+  if(stats.totalKm){
+    html += '<div class="stat-card"><span class="stat-num" style="color:'+theme.accent+'">'+formatMoney(stats.estFuelCost,"INR")+'</span><span class="stat-label">Est. fuel cost*</span></div>';
+  }
   html += '</div>';
 
   html += '<p class="review-label" style="margin-bottom:8px;">Interests, in priority order</p>';
@@ -1490,9 +1606,15 @@ function renderSummary(){
       ? "Drive time and distance use Google Maps traffic-aware routing at the time this trip was generated. Traffic conditions may change by the time you travel."
       : "Drive time and distance are estimated from straight-line distance between known locations, not live traffic — add a Google Maps API key in Profile for live traffic-aware numbers.")+
     '</p>';
+  if(stats.totalKm){
+    html += '<p class="empty-note" style="padding-top:0;">*Fuel cost is a plain estimate (assumes '+FUEL_EFFICIENCY_KMPL+' km/l at ₹'+FUEL_PRICE_PER_LITRE+'/litre) — not from Google, adjust for your own vehicle and local fuel price.</p>';
+  }
 
   html += '<div class="tl-actions">';
   html += '<button class="tl-action-btn" data-action="print-itinerary">Print</button>';
+  html += '<button class="tl-action-btn" data-action="export-ics">Add to Calendar</button>';
+  html += '</div>';
+  html += '<div class="tl-actions">';
   html += '<button class="tl-action-btn primary" style="background:'+theme.accent+'; border-color:'+theme.accent+';" data-action="export-pdf">Export PDF</button>';
   html += '</div>';
   html += '</div>';
@@ -1691,6 +1813,10 @@ function handleClick(e){
   else if(action==="export-pdf"){
     exportTripPDF();
   }
+  else if(action==="export-ics"){
+    var icsTrip = state.trips.find(function(t){ return t.id===state.currentTripId; });
+    if(icsTrip) exportTripICS(icsTrip);
+  }
   else if(action==="print-itinerary"){
     printItinerary();
   }
@@ -1708,7 +1834,7 @@ function handleClick(e){
     var token5 = acSessionTokens[field5];
     delete acSessionTokens[field5];
     placeDetails(placeId5, token5).then(function(details){
-      if(details) d5[PLACE_FIELD_MAP[field5]] = {placeId:placeId5, text:text5, lat:details.lat, lng:details.lng};
+      if(details) d5[PLACE_FIELD_MAP[field5]] = {placeId:placeId5, text:text5, lat:details.lat, lng:details.lng, photoUrl:details.photoUrl||null};
     });
   }
   else if(action==="save-maps-key"){
@@ -1728,6 +1854,7 @@ function submitWizard(){
     startDate: d.startDate, endDate: d.endDate,
     departureLocation: d.departureLocation, departurePlace: d.departurePlace, departureTime: d.departureTime,
     returnLocation: d.returnLocation, returnPlace: d.returnPlace, returnTime: d.returnTime,
+    stopoverLocation: d.stopoverLocation, stopoverPlace: d.stopoverPlace,
     intention: d.intention,
     travelers: d.travelers, ages: d.ages.map(function(a){ return a==null?30:a; }),
     goals: d.goals,
@@ -1863,6 +1990,37 @@ function triggerBlobFallback(blob, filename){
 }
 function fallbackPrint(trip){
   window.print();
+}
+
+/* ============================================================
+   CALENDAR EXPORT (.ics — universal, no Google account/OAuth needed)
+============================================================ */
+function icsEscape(s){ return (s||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n"); }
+function toICSDateTime(dateISO, minutes){
+  var d = new Date(dateISO+"T00:00:00");
+  d.setMinutes(d.getMinutes()+minutes);
+  var pad=function(n){return (n<10?"0":"")+n;};
+  return d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+"T"+pad(d.getHours())+pad(d.getMinutes())+"00";
+}
+function exportTripICS(trip){
+  var lines = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//EnRoute//Trip Planner//EN","CALSCALE:GREGORIAN"];
+  trip.days.forEach(function(day){
+    day.items.forEach(function(item, i){
+      var startMin = item.time;
+      var endMin = (i<day.items.length-1) ? Math.min(day.items[i+1].time, startMin+180) : startMin+60;
+      if(endMin<=startMin) endMin = startMin+30;
+      lines.push("BEGIN:VEVENT");
+      lines.push("UID:"+uid()+"@enroute.app");
+      lines.push("DTSTART:"+toICSDateTime(day.date, startMin));
+      lines.push("DTEND:"+toICSDateTime(day.date, endMin));
+      lines.push("SUMMARY:"+icsEscape(item.category+" — "+item.title));
+      if(item.subtitle) lines.push("DESCRIPTION:"+icsEscape(item.subtitle));
+      lines.push("END:VEVENT");
+    });
+  });
+  lines.push("END:VCALENDAR");
+  var blob = new Blob([lines.join("\r\n")], {type:"text/calendar;charset=utf-8"});
+  triggerBlobFallback(blob, trip.title.replace(/[^a-z0-9]+/gi,"_")+".ics");
 }
 
 /* ============================================================
