@@ -197,6 +197,11 @@
   .ac-item:hover{background:var(--cream-2);}
   .ac-hint{padding:10px 15px; font-size:12px; color:var(--gray); line-height:1.4;}
   @keyframes spin{ to{ transform:rotate(360deg); } }
+  .data-badge{display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:20px; font-size:12px; font-weight:700; margin-bottom:14px;}
+  .data-badge.live{background:var(--green-bg); color:var(--green);}
+  .data-badge.partial{background:var(--tan-badge); color:var(--ink-soft);}
+  .data-badge.fallback{background:var(--coral-bg); color:var(--coral-dark);}
+  .data-badge.offline{background:var(--tan-badge); color:var(--gray);}
   .row-2{display:flex; gap:12px;}
   .row-2 .field{flex:1;}
   .chip-wrap{display:flex; flex-wrap:wrap; gap:10px;}
@@ -703,6 +708,7 @@ function resolveNearbyFood(destGeo){
       return {
         title: p.displayName.text,
         subtitle: ratingSubtitle(p),
+        reviewCount: p.userRatingCount||0,
         score: p.rating * Math.log(1+(p.userRatingCount||0))
       };
     }).sort(function(a,b){ return b.score-a.score; });
@@ -714,6 +720,48 @@ function pickRealFood(list, usedTitles){
   var pick = candidates[0];
   usedTitles.push(pick.title);
   return {title:pick.title, subtitle:pick.subtitle};
+}
+/* The single most-reviewed spot in the list — a proxy for "everyone's talking about this place"
+   since Google has no actual social-virality signal. Needs a high review count to qualify. */
+function pickViralFood(list, usedTitles){
+  var candidates = (list||[]).filter(function(p){ return usedTitles.indexOf(p.title)===-1 && p.reviewCount>=2000; });
+  if(!candidates.length) return null;
+  candidates.sort(function(a,b){ return b.reviewCount-a.reviewCount; });
+  var pick = candidates[0];
+  usedTitles.push(pick.title);
+  return {title:pick.title, subtitle:pick.subtitle};
+}
+
+/* A popular tourist_attraction near the midpoint of a long drive — a "slight detour" suggestion.
+   Only offered for leisure/exploration trips on legs long enough to be worth a stop. */
+function resolveOnTheWaySpot(originGeo, destGeo, trip, usedTitles){
+  if(!hasMapsKey() || !originGeo || !destGeo) return Promise.resolve(null);
+  if(trip.intention!=="leisure" && trip.intention!=="exploration") return Promise.resolve(null);
+  var distKm = haversineKm(originGeo.lat,originGeo.lon,destGeo.lat,destGeo.lon);
+  if(distKm < 80) return Promise.resolve(null);
+  var mid = {lat:(originGeo.lat+destGeo.lat)/2, lon:(originGeo.lon+destGeo.lon)/2};
+  return fetch("https://places.googleapis.com/v1/places:searchNearby", {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json", "X-Goog-Api-Key":getMapsKey(),
+      "X-Goog-FieldMask":"places.displayName,places.rating,places.userRatingCount,places.formattedAddress"
+    },
+    body: JSON.stringify({
+      includedTypes:["tourist_attraction"],
+      maxResultCount:10,
+      rankPreference:"POPULARITY",
+      locationRestriction:{circle:{center:{latitude:mid.lat, longitude:mid.lon}, radius:30000}}
+    })
+  }).then(function(r){ return r.json(); }).then(function(d){
+    var candidates = (d.places||[]).filter(function(p){
+      return p.displayName && p.rating>=4.3 && (p.userRatingCount||0)>=800 && usedTitles.indexOf(p.displayName.text)===-1;
+    });
+    if(!candidates.length) return null;
+    candidates.sort(function(a,b){ return (b.userRatingCount||0)-(a.userRatingCount||0); });
+    var pick = candidates[0];
+    usedTitles.push(pick.displayName.text);
+    return {title:pick.displayName.text, subtitle: ratingSubtitle(pick)+" — a popular detour on the way."};
+  }).catch(function(){ return null; });
 }
 
 /* ============================================================
@@ -823,6 +871,7 @@ function generateItinerary(trip){
   var ages = trip.ages && trip.ages.length ? trip.ages : [30];
   var minAge = Math.min.apply(null,ages), maxAge = Math.max.apply(null,ages);
   var maxStretch = ageBreakLimitMinutes(minAge, maxAge);
+  var usedTitles = [];
 
   return Promise.all([
     resolvePlaceGeo(trip.destination, trip.destinationPlace),
@@ -834,9 +883,10 @@ function generateItinerary(trip){
 
     return Promise.all([
       resolveRouting(originGeo, destGeo),
-      resolveNearbyFood(destGeo)
+      resolveNearbyFood(destGeo),
+      resolveOnTheWaySpot(originGeo, destGeo, trip, usedTitles)
     ]).then(function(res){
-      var outboundRouting = res[0], realFood = res[1];
+      var outboundRouting = res[0], realFood = res[1], onTheWaySpot = res[2];
       var sameReturn = !returnGeoRaw;
       var returnGeo = returnGeoRaw || originGeo;
 
@@ -845,7 +895,9 @@ function generateItinerary(trip){
         var outboundKm = outboundRouting.km, outboundMin = outboundRouting.min;
         var backKm = backRouting.km, backMin = backRouting.min;
         var routingSource = (outboundRouting.source==="live" || backRouting.source==="live") ? "live" : "estimated";
-        var usedTitles = [];
+        var realFoodUsed = false;
+        var viralPick = pickViralFood(realFood, usedTitles);
+        if(viralPick) realFoodUsed = true;
         var days = [];
 
         for(var d=0; d<dayCount; d++){
@@ -855,6 +907,7 @@ function generateItinerary(trip){
 
           if(isFirst){
             var cur = {v: minutesFromTimeStr(trip.departureTime)};
+            var outboundStart = cur.v;
             items.push({
               time:cur.v, category:"DEPART",
               title:"Leave from "+(trip.departureLocation || "home"),
@@ -863,25 +916,31 @@ function generateItinerary(trip){
             if(dayCount===1){
               // same-day trip: drive there, activity, drive back
               buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm);
+              if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle});
               var act = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING") ;
               cur.v += 60;
               if(act) items.push({time:cur.v, category:act.category, title:act.title, subtitle:act.subtitle});
               else { var g=genericStop(destLabel, trip.interests,"sight"); items.push({time:cur.v, category:"SIGHTSEEING", title:g.title, subtitle:g.subtitle}); }
+              if(viralPick) items.push({time:cur.v+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle});
               cur.v += 150;
               var returnKm = outboundKm;
               buildDriveSegment(items, cur, outboundMin, maxStretch, (trip.returnLocation||trip.departureLocation||"home"), returnKm);
             } else {
               buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm);
+              if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle});
               cur.v += 60;
               var act1 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING");
               if(act1) items.push({time:cur.v, category:act1.category, title:act1.title, subtitle:act1.subtitle});
               else { var g1=genericStop(destLabel, trip.interests,"sight"); items.push({time:cur.v, category:"SIGHTSEEING", title:g1.title, subtitle:g1.subtitle}); }
               var stayTime = Math.max(cur.v+150, 19*60);
               items.push({time:stayTime, category:"STAY", title:"Check in, "+(STAY_LABELS[trip.stayType]||"stay").toLowerCase(), subtitle: trip.stayNotes || "Settle in and rest up for tomorrow."});
+              if(viralPick) items.push({time:stayTime+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle});
             }
           } else if(isLast){
             var cur2 = {v: 9*60};
-            var bf = pickRealFood(realFood, usedTitles) || pickCurated(destKey, usedTitles, trip.interests, "BREAKFAST");
+            var bfReal = pickRealFood(realFood, usedTitles);
+            if(bfReal) realFoodUsed = true;
+            var bf = bfReal || pickCurated(destKey, usedTitles, trip.interests, "BREAKFAST");
             if(bf) items.push({time:cur2.v, category:"BREAKFAST", title:bf.title, subtitle:bf.subtitle});
             else { var gb=genericStop(destLabel, trip.interests,"breakfast"); items.push({time:cur2.v, category:"BREAKFAST", title:gb.title, subtitle:gb.subtitle}); }
             items.push({time:cur2.v+60, category:"CHECKOUT", title:"Check out", subtitle:"Settle up and pack the car."});
@@ -894,7 +953,9 @@ function generateItinerary(trip){
             });
           } else {
             var cur3 = {v: 8*60+30};
-            var bf2 = pickRealFood(realFood, usedTitles) || pickCurated(destKey, usedTitles, trip.interests, "BREAKFAST");
+            var bf2Real = pickRealFood(realFood, usedTitles);
+            if(bf2Real) realFoodUsed = true;
+            var bf2 = bf2Real || pickCurated(destKey, usedTitles, trip.interests, "BREAKFAST");
             if(bf2) items.push({time:cur3.v, category:"BREAKFAST", title:bf2.title, subtitle:bf2.subtitle});
             else { var gb2=genericStop(destLabel, trip.interests,"breakfast"); items.push({time:cur3.v, category:"BREAKFAST", title:gb2.title, subtitle:gb2.subtitle}); }
             cur3.v += 90;
@@ -902,7 +963,9 @@ function generateItinerary(trip){
             if(s1) items.push({time:cur3.v, category:s1.category, title:s1.title, subtitle:s1.subtitle});
             else { var g2=genericStop(destLabel, trip.interests,"sight"); items.push({time:cur3.v, category:"SIGHTSEEING", title:g2.title, subtitle:g2.subtitle}); }
             cur3.v += 180;
-            var f1 = pickRealFood(realFood, usedTitles) || pickCurated(destKey, usedTitles, trip.interests, "FOOD");
+            var f1Real = pickRealFood(realFood, usedTitles);
+            if(f1Real) realFoodUsed = true;
+            var f1 = f1Real || pickCurated(destKey, usedTitles, trip.interests, "FOOD");
             if(f1) items.push({time:cur3.v, category:"FOOD", title:f1.title, subtitle:f1.subtitle});
             else { var gf=genericStop(destLabel, trip.interests,"food"); items.push({time:cur3.v, category:"FOOD", title:gf.title, subtitle:gf.subtitle}); }
             cur3.v += 240;
@@ -930,7 +993,7 @@ function generateItinerary(trip){
           dayCount: dayCount,
           maxStretchMin: maxStretch
         };
-        return {days: days, stats: stats, routingSource: routingSource};
+        return {days: days, stats: stats, routingSource: routingSource, foodSource: realFoodUsed ? "live" : "none"};
       });
     });
   });
@@ -979,6 +1042,24 @@ function iconExplore(){return '<svg width="22" height="22" viewBox="0 0 24 24" f
 function iconTrips(){return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>';}
 function iconProfile(){return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c1-3.5 4-5.2 7-5.2s6 1.7 7 5.2"/></svg>';}
 
+function iconSignal(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 12a8 8 0 0 1 16 0"/><path d="M7.5 12a4.5 4.5 0 0 1 9 0"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>'; }
+function iconSignalOff(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 12a8 8 0 0 1 16 0"/><path d="M7.5 12a4.5 4.5 0 0 1 9 0"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M3 3l18 18"/></svg>'; }
+/* What the trip's routing/food data actually came from — surfaced so a silent
+   fallback to estimates (key set but a call failed) isn't mistaken for live data. */
+function dataQualityInfo(trip){
+  var key = hasMapsKey();
+  var routingLive = trip.routingSource==="live";
+  var foodLive = trip.foodSource==="live";
+  if(routingLive && foodLive) return {cls:"live", icon:iconSignal(), label:"Live · Google Maps"};
+  if(routingLive || foodLive) return {cls:"partial", icon:iconSignal(), label:"Partly live · Google Maps"};
+  if(key) return {cls:"fallback", icon:iconSignalOff(), label:"Estimated — live data unavailable"};
+  return {cls:"offline", icon:iconSignalOff(), label:"Estimated (no Maps key set)"};
+}
+function dataQualityBadgeHTML(trip){
+  var info = dataQualityInfo(trip);
+  return '<div class="data-badge '+info.cls+'">'+info.icon+'<span>'+info.label+'</span></div>';
+}
+
 function categoryIcon(cat){
   var c = (cat||"").toUpperCase();
   var s = 'width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"';
@@ -991,6 +1072,8 @@ function categoryIcon(cat){
   if(c==="STAY") return '<svg '+s+'><path d="M3 18v-7a2 2 0 012-2h14a2 2 0 012 2v7"/><path d="M3 18h18M5 9V6h4v3"/></svg>';
   if(c==="DEPART" || c==="ARRIVE") return '<svg '+s+'><path d="M5 3v18"/><path d="M5 4h11l-3 4 3 4H5"/></svg>';
   if(c==="CHECKOUT") return '<svg '+s+'><path d="M9 3H5v18h4"/><path d="M12 8l5 4-5 4"/><path d="M9 12h8"/></svg>';
+  if(c==="DETOUR") return '<svg '+s+'><path d="M12 21s-7-6.2-7-11.2A7 7 0 0119 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.3"/></svg>';
+  if(c==="TRENDING") return '<svg '+s+'><path d="M12 2c1 3-3 4-3 7a3 3 0 006 0c0-1-.5-1.7-1-2.3.7.3 2 1.6 2 4.3a4 4 0 01-8 0c0-4 3-5.5 4-9z"/></svg>';
   return '<svg '+s+'><circle cx="12" cy="12" r="3"/></svg>';
 }
 
@@ -1337,6 +1420,7 @@ function renderTimeline(){
   html += '<div class="tl-body" style="--accent:'+theme.accent+'; --accent-bg:'+theme.accentBg+';">';
   html += '<p class="tl-title">'+esc(trip.title)+'</p>';
   html += '<p class="tl-dates">'+fmtDateShort(trip.startDate)+' – '+fmtDateShort(trip.endDate)+' · '+trip.days.length+' day'+(trip.days.length>1?"s":"")+'</p>';
+  html += dataQualityBadgeHTML(trip);
   html += '<div class="day-tabs">';
   trip.days.forEach(function(dd,i){
     html += '<button class="day-tab '+(i===state.activeDay?"active":"")+'" data-action="set-day" data-idx="'+i+'">'+dd.label+'</button>';
@@ -1374,7 +1458,8 @@ function renderSummary(){
   html += '</div>';
   html += '<div class="summary-hero px" style="--accent:'+theme.accent+'; --accent-bg:'+theme.accentBg+';">';
   html += '<p class="wizard-title" style="margin-bottom:2px;">'+esc(trip.title)+'</p>';
-  html += '<p class="wizard-sub" style="margin-bottom:20px;">'+fmtDateShort(trip.startDate)+' – '+fmtDateShort(trip.endDate)+' · '+stats.dayCount+' day'+(stats.dayCount>1?"s":"")+'</p>';
+  html += '<p class="wizard-sub" style="margin-bottom:10px;">'+fmtDateShort(trip.startDate)+' – '+fmtDateShort(trip.endDate)+' · '+stats.dayCount+' day'+(stats.dayCount>1?"s":"")+'</p>';
+  html += dataQualityBadgeHTML(trip);
 
   html += '<div class="route-strip">';
   html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(trip.departureLocation||"Home")+'</span></div>';
@@ -1658,6 +1743,7 @@ function submitWizard(){
     trip.days = built.days;
     trip.stats = built.stats;
     trip.routingSource = built.routingSource;
+    trip.foodSource = built.foodSource;
     state.trips.push(trip);
     saveTrips(state.trips);
     state.currentTripId = trip.id;
