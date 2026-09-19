@@ -672,7 +672,8 @@ function extractPrimaryRoad(route){
   if(!text) return null;
   text = text.split(/[\n.(]/)[0]; // keep just the first line/clause — instructions can have multiple \n-joined clauses plus parenthetical distance notes
   var m = text.match(/\b(?:onto|on|toward)\s+(.+)$/i);
-  var road = (m ? m[1] : text).trim().replace(/\s+/g," ");
+  if(!m) return null; // no explicit road named (e.g. "Keep right to take the flyover") — don't show a maneuver phrase as if it were a road
+  var road = m[1].trim().replace(/\s+/g," ");
   if(!road || !/^[\x20-\x7E]+$/.test(road) || road.length>60) return null; // ASCII-only sanity check — anything else means the extraction went wrong
   return road;
 }
