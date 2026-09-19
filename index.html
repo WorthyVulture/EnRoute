@@ -670,9 +670,11 @@ function extractPrimaryRoad(route){
   steps.sort(function(a,b){ return (b.distanceMeters||0)-(a.distanceMeters||0); });
   var text = steps[0].navigationInstruction && steps[0].navigationInstruction.instructions;
   if(!text) return null;
-  var m = text.match(/\b(?:onto|on|toward)\s+(.+?)[.,]?$/i);
+  text = text.split(/[\n.(]/)[0]; // keep just the first line/clause — instructions can have multiple \n-joined clauses plus parenthetical distance notes
+  var m = text.match(/\b(?:onto|on|toward)\s+(.+)$/i);
   var road = (m ? m[1] : text).trim().replace(/\s+/g," ");
-  return road.length ? road : null;
+  if(!road || !/^[\x20-\x7E]+$/.test(road) || road.length>60) return null; // ASCII-only sanity check — anything else means the extraction went wrong
+  return road;
 }
 function computeRoute(originLat, originLon, destLat, destLon){
   var key = getMapsKey();
@@ -688,7 +690,8 @@ function computeRoute(originLat, originLon, destLat, destLon){
       destination:{location:{latLng:{latitude:destLat, longitude:destLon}}},
       travelMode:"DRIVE",
       routingPreference:"TRAFFIC_AWARE",
-      extraComputations:["TOLLS"]
+      extraComputations:["TOLLS"],
+      languageCode:"en"
     })
   }).then(function(r){ return r.json(); }).then(function(d){
     var route = d.routes && d.routes[0];
