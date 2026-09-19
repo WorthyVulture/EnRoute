@@ -202,6 +202,20 @@
   .data-badge.partial{background:var(--tan-badge); color:var(--ink-soft);}
   .data-badge.fallback{background:var(--coral-bg); color:var(--coral-dark);}
   .data-badge.offline{background:var(--tan-badge); color:var(--gray);}
+  .tl-mini-actions{display:flex; gap:8px; margin-top:9px; flex-wrap:wrap;}
+  .tl-mini-btn{
+    display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700;
+    color:var(--ink-soft); background:var(--cream-2); border:1px solid var(--line); border-radius:20px;
+    padding:6px 11px; text-decoration:none; cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  .tl-mini-btn.saved{color:var(--coral); border-color:var(--coral);}
+  .badge-row{display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 18px;}
+  .badge-pill{
+    display:inline-flex; align-items:center; gap:6px; background:var(--tan-badge); color:var(--ink-soft);
+    font-size:12.5px; font-weight:700; padding:7px 13px; border-radius:20px;
+  }
+  .confetti-piece{position:fixed; top:-20px; width:9px; height:14px; opacity:0.9; z-index:999; pointer-events:none; animation:confetti-fall linear forwards;}
+  @keyframes confetti-fall{ to{ transform:translateY(110vh) rotate(600deg); opacity:0.3; } }
   .row-2{display:flex; gap:12px;}
   .row-2 .field{flex:1;}
   .chip-wrap{display:flex; flex-wrap:wrap; gap:10px;}
@@ -550,6 +564,65 @@ function formatMoney(amount, currency){
   return symbol+Math.round(amount).toLocaleString();
 }
 
+/* ============================================================
+   MAPS LINKS & ROUTE DIAGRAM (pure client-side, no extra API calls)
+============================================================ */
+function mapsPlaceLink(lat, lon, label){
+  return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent((label||"")+" @"+lat+","+lon);
+}
+/* Full multi-stop directions link. Google's consumer Maps URL scheme supports a limited
+   number of waypoints before it gets unwieldy, so this caps the middle stops and always
+   keeps origin/destination. */
+function mapsDirectionsLink(waypoints){
+  var pts = (waypoints||[]).filter(function(w){ return typeof w.lat==="number" && typeof w.lon==="number"; });
+  if(pts.length<2) return null;
+  var origin = pts[0], destination = pts[pts.length-1];
+  var middle = pts.slice(1, -1);
+  if(middle.length>8){
+    // keep it readable — thin out evenly rather than just truncating the tail
+    var step = middle.length/8, thinned=[];
+    for(var i=0;i<8;i++) thinned.push(middle[Math.floor(i*step)]);
+    middle = thinned;
+  }
+  var waypointsParam = middle.map(function(w){ return w.lat+","+w.lon; }).join("|");
+  var url = "https://www.google.com/maps/dir/?api=1"
+    +"&origin="+origin.lat+","+origin.lon
+    +"&destination="+destination.lat+","+destination.lon
+    +"&travelmode=driving";
+  if(waypointsParam) url += "&waypoints="+encodeURIComponent(waypointsParam);
+  return url;
+}
+
+/* A simple, not-to-scale route diagram — plots real lat/lon in an equirectangular
+   projection scaled to fit the trip's own bounding box. No Maps Static API needed. */
+function buildRouteMapSVG(waypoints, width, height){
+  var pts = (waypoints||[]).filter(function(w){ return typeof w.lat==="number" && typeof w.lon==="number"; });
+  if(pts.length<2) return "";
+  width = width||600; height = height||380;
+  var pad = 34;
+  var lats = pts.map(function(p){return p.lat;}), lons = pts.map(function(p){return p.lon;});
+  var minLat=Math.min.apply(null,lats), maxLat=Math.max.apply(null,lats);
+  var minLon=Math.min.apply(null,lons), maxLon=Math.max.apply(null,lons);
+  function project(p){
+    var x = maxLon===minLon ? width/2 : pad+(p.lon-minLon)/(maxLon-minLon)*(width-2*pad);
+    var y = maxLat===minLat ? height/2 : pad+(maxLat-p.lat)/(maxLat-minLat)*(height-2*pad);
+    return {x:x,y:y};
+  }
+  var roleColor = {origin:"#3C5A45", stopover:"#8B5E34", destination:"#D9553A", detour:"#1F6E86", "return":"#3C5A45"};
+  var coords = pts.map(project);
+  var pathD = coords.map(function(c,i){ return (i===0?"M":"L")+c.x.toFixed(1)+","+c.y.toFixed(1); }).join(" ");
+  var svg = '<svg viewBox="0 0 '+width+' '+height+'" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; display:block;">';
+  svg += '<path d="'+pathD+'" fill="none" stroke="#C7B896" stroke-width="2.5" stroke-dasharray="7 5"/>';
+  coords.forEach(function(c,i){
+    var color = roleColor[pts[i].role] || "#D9553A";
+    svg += '<circle cx="'+c.x.toFixed(1)+'" cy="'+c.y.toFixed(1)+'" r="6.5" fill="'+color+'" stroke="#FBF4E8" stroke-width="2"/>';
+    var label = (pts[i].label||"").length>22 ? pts[i].label.slice(0,20)+"…" : (pts[i].label||"");
+    svg += '<text x="'+c.x.toFixed(1)+'" y="'+(c.y+18).toFixed(1)+'" font-size="10.5" text-anchor="middle" fill="#28211A" font-family="Inter,Helvetica,sans-serif">'+esc(label)+'</text>';
+  });
+  svg += '</svg>';
+  return svg;
+}
+
 /* Age-based max comfortable drive stretch before a break, in minutes */
 function ageBreakLimitMinutes(minAge, maxAge){
   var limit = 210; // default adults, 3h30
@@ -561,6 +634,57 @@ function ageBreakLimitMinutes(minAge, maxAge){
   if(maxAge >= 75) limit = Math.min(limit, 120);
   else if(maxAge >= 65) limit = Math.min(limit, 150);
   return clamp(limit, 60, 210);
+}
+function explainBreakCadence(ages, maxStretch){
+  var minAge = Math.min.apply(null, ages), maxAge = Math.max.apply(null, ages);
+  if(minAge<=12) return "Breaks are scheduled every "+fmtDur(maxStretch)+" — shorter stretches because the youngest traveler is "+minAge+".";
+  if(maxAge>=65) return "Breaks are scheduled every "+fmtDur(maxStretch)+" — shorter stretches for comfort at "+maxAge+".";
+  return "Breaks are scheduled every "+fmtDur(maxStretch)+", the standard comfortable stretch for adult travelers.";
+}
+
+/* Simple rule-based packing list — no AI needed, derived from data already on the trip. */
+function buildPackingList(trip){
+  var list = ["Phone charger & power bank", "Reusable water bottle", "Basic first-aid kit", "Cash & spare change for tolls"];
+  var ages = trip.ages||[30];
+  var minAge = Math.min.apply(null,ages), maxAge = Math.max.apply(null,ages);
+  if(minAge<=5) list.push("Diapers/wipes & extra snacks for the little one", "A favorite toy or comfort item");
+  else if(minAge<=12) list.push("Snacks & entertainment for the kids", "Motion-sickness remedy, just in case");
+  if(maxAge>=60) list.push("Regular medication", "A neck pillow for comfort");
+  var interests = trip.interests||[];
+  var theme = themeFor(trip).key;
+  if(interests.indexOf("nature")!==-1 || interests.indexOf("wildlife")!==-1 || theme==="nature" || theme==="wildlife"){
+    list.push("Comfortable walking shoes", "Insect repellent");
+  }
+  if(interests.indexOf("beaches")!==-1 || theme==="blue"){
+    list.push("Sunscreen", "Swimwear & a quick-dry towel");
+  }
+  if(interests.indexOf("tea-estates")!==-1 || theme==="green"){
+    list.push("A light jacket — hill evenings get cool");
+  }
+  if(interests.indexOf("heritage")!==-1 || theme==="heritage"){
+    list.push("Modest clothing for temple/heritage-site visits");
+  }
+  if(trip.intention==="food-hunt") list.push("Antacids — you know why");
+  if((trip.days||[]).length>=4) list.push("Extra change of clothes", "A laundry bag");
+  var seen = {};
+  return list.filter(function(x){ if(seen[x]) return false; seen[x]=true; return true; });
+}
+
+/* Fun, low-stakes badges computed purely from the trip's own data — no extra API calls. */
+function computeBadges(trip){
+  var badges = [];
+  var items = (trip.days||[]).reduce(function(acc,d){ return acc.concat(d.items); }, []);
+  if(items.some(function(i){ return i.category==="DETOUR"; })) badges.push({icon:"🧭", label:"Detour Deviant"});
+  // Only count real, photo-backed picks — not generic template fallbacks — so this badge means something.
+  var realFoodCount = items.filter(function(i){ return (i.category==="FOOD"||i.category==="BREAKFAST"||i.category==="TRENDING") && i.photoUrl; }).length;
+  if(realFoodCount>=2) badges.push({icon:"🍽️", label:"Foodie Route"});
+  if(items.some(function(i){ return i.category==="TRENDING"; })) badges.push({icon:"🔥", label:"Chased the Buzz"});
+  if(minutesFromTimeStr(trip.departureTime)<390) badges.push({icon:"🌅", label:"Early Bird"});
+  if(minutesFromTimeStr(trip.departureTime)>=720) badges.push({icon:"🌆", label:"Late Starter"});
+  if((trip.stats&&trip.stats.totalDriveMin||0)>=600) badges.push({icon:"🛣️", label:"Road Warrior"});
+  if(trip.stopoverLocation && (trip.stats&&trip.stats.dayCount||0)>=3) badges.push({icon:"📍", label:"Trailblazer"});
+  if(trip.routingSource==="live") badges.push({icon:"📡", label:"Live Navigator"});
+  return badges;
 }
 
 /* ============================================================
@@ -575,6 +699,16 @@ function loadTrips(){
 }
 function saveTrips(trips){
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(trips)); return true; }
+  catch(e){ return false; }
+}
+
+var FAVORITES_KEY = "enroute_favorites_v1";
+function loadFavorites(){
+  try{ var raw = localStorage.getItem(FAVORITES_KEY); return raw ? JSON.parse(raw) : []; }
+  catch(e){ return []; }
+}
+function saveFavorites(favs){
+  try{ localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs)); return true; }
   catch(e){ return false; }
 }
 
@@ -649,7 +783,7 @@ function nearbyRestaurants(lat, lon, radiusMeters){
     method:"POST",
     headers:{
       "Content-Type":"application/json", "X-Goog-Api-Key":key,
-      "X-Goog-FieldMask":"places.displayName,places.rating,places.userRatingCount,places.formattedAddress,places.photos"
+      "X-Goog-FieldMask":"places.displayName,places.rating,places.userRatingCount,places.formattedAddress,places.photos,places.location"
     },
     body: JSON.stringify({
       includedTypes:["restaurant"],
@@ -757,6 +891,8 @@ function resolveNearbyFood(destGeo){
         subtitle: ratingSubtitle(p),
         reviewCount: p.userRatingCount||0,
         photoUrl: photoUrlFor(p.photos),
+        lat: p.location ? p.location.latitude : null,
+        lon: p.location ? p.location.longitude : null,
         score: p.rating * Math.log(1+(p.userRatingCount||0))
       };
     }).sort(function(a,b){ return b.score-a.score; });
@@ -767,7 +903,7 @@ function pickRealFood(list, usedTitles){
   if(!candidates.length) return null;
   var pick = candidates[0];
   usedTitles.push(pick.title);
-  return {title:pick.title, subtitle:pick.subtitle, photoUrl:pick.photoUrl||null};
+  return {title:pick.title, subtitle:pick.subtitle, photoUrl:pick.photoUrl||null, lat:pick.lat, lon:pick.lon};
 }
 /* The single most-reviewed spot in the list — a proxy for "everyone's talking about this place"
    since Google has no actual social-virality signal. Needs a high review count to qualify. */
@@ -777,7 +913,7 @@ function pickViralFood(list, usedTitles){
   candidates.sort(function(a,b){ return b.reviewCount-a.reviewCount; });
   var pick = candidates[0];
   usedTitles.push(pick.title);
-  return {title:pick.title, subtitle:pick.subtitle, photoUrl:pick.photoUrl||null};
+  return {title:pick.title, subtitle:pick.subtitle, photoUrl:pick.photoUrl||null, lat:pick.lat, lon:pick.lon};
 }
 
 /* One suggested fuel stop per break on a leg, positioned by linear-interpolating the
@@ -842,7 +978,7 @@ function resolveOnTheWaySpot(originGeo, destGeo, trip, usedTitles){
     method:"POST",
     headers:{
       "Content-Type":"application/json", "X-Goog-Api-Key":getMapsKey(),
-      "X-Goog-FieldMask":"places.displayName,places.rating,places.userRatingCount,places.formattedAddress,places.photos"
+      "X-Goog-FieldMask":"places.displayName,places.rating,places.userRatingCount,places.formattedAddress,places.photos,places.location"
     },
     body: JSON.stringify({
       includedTypes:["tourist_attraction"],
@@ -858,7 +994,7 @@ function resolveOnTheWaySpot(originGeo, destGeo, trip, usedTitles){
     candidates.sort(function(a,b){ return (b.userRatingCount||0)-(a.userRatingCount||0); });
     var pick = candidates[0];
     usedTitles.push(pick.displayName.text);
-    return {title:pick.displayName.text, subtitle: ratingSubtitle(pick)+" — a popular detour on the way.", photoUrl:photoUrlFor(pick.photos)};
+    return {title:pick.displayName.text, subtitle: ratingSubtitle(pick)+" — a popular detour on the way.", photoUrl:photoUrlFor(pick.photos), lat:pick.location?pick.location.latitude:null, lon:pick.location?pick.location.longitude:null};
   }).catch(function(){ return null; });
 }
 
@@ -1049,32 +1185,32 @@ function generateItinerary(trip){
               // same-day trip: drive there, activity, drive back
               var sameDayReturnWaypoints = outboundWaypoints.slice().reverse();
               buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops, outboundRouting.viaRoad, outboundWaypoints);
-              if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle, photoUrl:onTheWaySpot.photoUrl});
+              if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle, photoUrl:onTheWaySpot.photoUrl, lat:onTheWaySpot.lat, lon:onTheWaySpot.lon});
               var act = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING") ;
               cur.v += 60;
               if(act) items.push({time:cur.v, category:act.category, title:act.title, subtitle:act.subtitle});
               else { var g=genericStop(destLabel, trip.interests,"sight"); items.push({time:cur.v, category:"SIGHTSEEING", title:g.title, subtitle:g.subtitle}); }
-              if(viralPick) items.push({time:cur.v+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle, photoUrl:viralPick.photoUrl});
+              if(viralPick) items.push({time:cur.v+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle, photoUrl:viralPick.photoUrl, lat:viralPick.lat, lon:viralPick.lon});
               cur.v += 150;
               var returnKm = outboundKm;
               buildDriveSegment(items, cur, outboundMin, maxStretch, (trip.returnLocation||trip.departureLocation||"home"), returnKm, null, outboundRouting.viaRoad, sameDayReturnWaypoints);
             } else {
               buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops, outboundRouting.viaRoad, outboundWaypoints);
-              if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle, photoUrl:onTheWaySpot.photoUrl});
+              if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle, photoUrl:onTheWaySpot.photoUrl, lat:onTheWaySpot.lat, lon:onTheWaySpot.lon});
               cur.v += 60;
               var act1 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING");
               if(act1) items.push({time:cur.v, category:act1.category, title:act1.title, subtitle:act1.subtitle});
               else { var g1=genericStop(destLabel, trip.interests,"sight"); items.push({time:cur.v, category:"SIGHTSEEING", title:g1.title, subtitle:g1.subtitle}); }
               var stayTime = Math.max(cur.v+150, 19*60);
               items.push({time:stayTime, category:"STAY", title:"Check in, "+(STAY_LABELS[trip.stayType]||"stay").toLowerCase(), subtitle: trip.stayNotes || "Settle in and rest up for tomorrow."});
-              if(viralPick) items.push({time:stayTime+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle, photoUrl:viralPick.photoUrl});
+              if(viralPick) items.push({time:stayTime+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle, photoUrl:viralPick.photoUrl, lat:viralPick.lat, lon:viralPick.lon});
             }
           } else if(isLast){
             var cur2 = {v: 9*60};
             var bfReal = pickRealFood(realFood, usedTitles);
             if(bfReal) realFoodUsed = true;
             var bf = bfReal || pickCurated(destKey, usedTitles, trip.interests, "BREAKFAST");
-            if(bf) items.push({time:cur2.v, category:"BREAKFAST", title:bf.title, subtitle:bf.subtitle, photoUrl:bf.photoUrl});
+            if(bf) items.push({time:cur2.v, category:"BREAKFAST", title:bf.title, subtitle:bf.subtitle, photoUrl:bf.photoUrl, lat:bf.lat, lon:bf.lon});
             else { var gb=genericStop(destLabel, trip.interests,"breakfast"); items.push({time:cur2.v, category:"BREAKFAST", title:gb.title, subtitle:gb.subtitle}); }
             items.push({time:cur2.v+60, category:"CHECKOUT", title:"Check out", subtitle:"Settle up and pack the car."});
             cur2.v += 90;
@@ -1089,7 +1225,7 @@ function generateItinerary(trip){
             var bf2Real = pickRealFood(realFood, usedTitles);
             if(bf2Real) realFoodUsed = true;
             var bf2 = bf2Real || pickCurated(destKey, usedTitles, trip.interests, "BREAKFAST");
-            if(bf2) items.push({time:cur3.v, category:"BREAKFAST", title:bf2.title, subtitle:bf2.subtitle, photoUrl:bf2.photoUrl});
+            if(bf2) items.push({time:cur3.v, category:"BREAKFAST", title:bf2.title, subtitle:bf2.subtitle, photoUrl:bf2.photoUrl, lat:bf2.lat, lon:bf2.lon});
             else { var gb2=genericStop(destLabel, trip.interests,"breakfast"); items.push({time:cur3.v, category:"BREAKFAST", title:gb2.title, subtitle:gb2.subtitle}); }
             cur3.v += 90;
             var s1 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING") || pickCurated(destKey, usedTitles, trip.interests, "WILDLIFE");
@@ -1099,7 +1235,7 @@ function generateItinerary(trip){
             var f1Real = pickRealFood(realFood, usedTitles);
             if(f1Real) realFoodUsed = true;
             var f1 = f1Real || pickCurated(destKey, usedTitles, trip.interests, "FOOD");
-            if(f1) items.push({time:cur3.v, category:"FOOD", title:f1.title, subtitle:f1.subtitle, photoUrl:f1.photoUrl});
+            if(f1) items.push({time:cur3.v, category:"FOOD", title:f1.title, subtitle:f1.subtitle, photoUrl:f1.photoUrl, lat:f1.lat, lon:f1.lon});
             else { var gf=genericStop(destLabel, trip.interests,"food"); items.push({time:cur3.v, category:"FOOD", title:gf.title, subtitle:gf.subtitle}); }
             cur3.v += 240;
             var s2 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING");
@@ -1134,7 +1270,25 @@ function generateItinerary(trip){
           totalToll: totalToll, tollCurrency: tollCurrency,
           estFuelCost: estFuelCost
         };
-        return {days: days, stats: stats, routingSource: routingSource, foodSource: realFoodUsed ? "live" : "none"};
+
+        // A geographically-ordered list of every real point on this trip — used for the
+        // "open in Google Maps" link and the printable route diagram.
+        var detourItems = [], destinationAreaItems = [];
+        days.forEach(function(day){
+          day.items.forEach(function(item){
+            if(typeof item.lat!=="number" || typeof item.lon!=="number") return;
+            (item.category==="DETOUR" ? detourItems : destinationAreaItems).push(item);
+          });
+        });
+        var waypoints = [];
+        if(originGeo) waypoints.push({lat:originGeo.lat, lon:originGeo.lon, label:trip.departureLocation||"Home", role:"origin"});
+        if(hasStopover && stopoverGeo) waypoints.push({lat:stopoverGeo.lat, lon:stopoverGeo.lon, label:stopoverLabel, role:"stopover"});
+        detourItems.forEach(function(item){ waypoints.push({lat:item.lat, lon:item.lon, label:item.title, role:"detour"}); });
+        if(destGeo) waypoints.push({lat:destGeo.lat, lon:destGeo.lon, label:destLabel, role:"destination"});
+        destinationAreaItems.forEach(function(item){ waypoints.push({lat:item.lat, lon:item.lon, label:item.title, role:item.category.toLowerCase()}); });
+        if(returnGeo) waypoints.push({lat:returnGeo.lat, lon:returnGeo.lon, label:trip.returnLocation||trip.departureLocation||"Home", role:"return"});
+
+        return {days: days, stats: stats, routingSource: routingSource, foodSource: realFoodUsed ? "live" : "none", waypoints: waypoints};
       });
     });
   });
@@ -1144,14 +1298,16 @@ function generateItinerary(trip){
    STATE
 ============================================================ */
 var state = {
-  screen: "home",       // home | wizard | timeline | trips | explore | profile
+  screen: "home",       // home | wizard | timeline | trips | explore | profile | wrapped | farfinder
   trips: loadTrips(),
+  favorites: loadFavorites(),
   currentTripId: null,
   activeDay: 0,
   moreMenuOpen: false,
   wizard: null,
   exploreQuery: "",
-  exploreFilter: "all"
+  exploreFilter: "all",
+  farFinder: {hours:4, origin:"", results:null}
 };
 
 var STEPS = ["basics","window","intention","travelers","goals","food","stay","interests","review"];
@@ -1185,6 +1341,8 @@ function iconTrips(){return '<svg width="22" height="22" viewBox="0 0 24 24" fil
 function iconProfile(){return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c1-3.5 4-5.2 7-5.2s6 1.7 7 5.2"/></svg>';}
 
 function iconSignal(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 12a8 8 0 0 1 16 0"/><path d="M7.5 12a4.5 4.5 0 0 1 9 0"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>'; }
+function iconPin(){ return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 21s-7-6.2-7-11.2A7 7 0 0119 9.8C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.3"/></svg>'; }
+function iconStar(filled){ return '<svg width="12" height="12" viewBox="0 0 24 24" fill="'+(filled?"currentColor":"none")+'" stroke="currentColor" stroke-width="2"><path d="M12 3l2.9 6.3 6.9.8-5.1 4.8 1.4 6.8L12 18.2 5.9 21.7l1.4-6.8-5.1-4.8 6.9-.8L12 3z"/></svg>'; }
 function iconSignalOff(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 12a8 8 0 0 1 16 0"/><path d="M7.5 12a4.5 4.5 0 0 1 9 0"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M3 3l18 18"/></svg>'; }
 /* What the trip's routing/food data actually came from — surfaced so a silent
    fallback to estimates (key set but a call failed) isn't mistaken for live data. */
@@ -1228,8 +1386,147 @@ function renderGenerating(){
     '</p></div>';
 }
 
+/* ============================================================
+   RENDER: TRIP WRAPPED (canvas card)
+============================================================ */
+function renderWrapped(){
+  var trip = state.trips.find(function(t){ return t.id===state.currentTripId; });
+  if(!trip){ state.screen="home"; return renderHome(); }
+  var html = '<div class="wizard-head">';
+  html += '<button class="icon-btn" data-action="nav" data-target="summary"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>';
+  html += '<span style="font-weight:700; font-size:15px;">Trip Wrapped</span>';
+  html += '</div>';
+  html += '<div class="px" style="padding-bottom:28px;">';
+  html += '<canvas id="wrapped-canvas" width="900" height="1350" style="width:100%; height:auto; border-radius:var(--radius-lg); box-shadow:0 10px 28px rgba(140,90,50,0.18); display:block;"></canvas>';
+  html += '<button class="plan-btn" style="margin-top:18px;" data-action="download-wrapped">Download image</button>';
+  html += '</div>';
+  return html;
+}
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function resolveThemeHex(theme){
+  function pick(v, fallback){ var m=(v||"").match(/--[\w-]+/); return m ? (cssVar(m[0])||fallback) : fallback; }
+  return {
+    from: pick(theme.heroFrom, "#D9553A"),
+    to: pick(theme.heroTo, "#B8422B"),
+    accent: pick(theme.accent, "#D9553A")
+  };
+}
+function roundRectPath(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines){
+  var words = (text||"").split(" "), line = "", lines=[];
+  words.forEach(function(w){
+    var test = line?line+" "+w:w;
+    if(ctx.measureText(test).width > maxWidth && line){ lines.push(line); line = w; }
+    else line = test;
+  });
+  if(line) lines.push(line);
+  lines.slice(0, maxLines||2).forEach(function(l,i){ ctx.fillText(l, x, y+i*lineHeight); });
+  return Math.min(lines.length, maxLines||2)*lineHeight;
+}
+function drawWrappedCanvas(){
+  var trip = state.trips.find(function(t){ return t.id===state.currentTripId; });
+  var canvas = document.getElementById("wrapped-canvas");
+  if(!trip || !canvas) return;
+  var ctx = canvas.getContext("2d");
+  var W = canvas.width, H = canvas.height;
+  var theme = themeFor(trip);
+  var colors = resolveThemeHex(theme);
+  var stats = getTripStats(trip);
+  var badges = computeBadges(trip);
+
+  var grad = ctx.createLinearGradient(0,0,W,H);
+  grad.addColorStop(0, colors.from);
+  grad.addColorStop(1, colors.to);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  roundRectPath(ctx, 40,40,W-80,H-80,28); ctx.fill();
+
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = colors.accent;
+  ctx.font = "800 20px Inter, sans-serif";
+  ctx.fillText("✨ TRIP WRAPPED", 80, 108);
+
+  ctx.fillStyle = "#28211A";
+  ctx.font = "800 46px Poppins, Inter, sans-serif";
+  var titleH = wrapCanvasText(ctx, trip.title, 80, 168, W-160, 52, 2);
+
+  ctx.font = "500 22px Inter, sans-serif";
+  ctx.fillStyle = "#6B6154";
+  ctx.fillText(fmtDateShort(trip.startDate)+" – "+fmtDateShort(trip.endDate), 80, 168+titleH+30);
+
+  var statList = [
+    {n: fmtDur(stats.totalDriveMin), l:"ON THE ROAD"},
+    {n: (stats.totalKm?stats.totalKm+" KM":"—"), l:"COVERED"},
+    {n: String(stats.totalBreaks), l:"BREAKS TAKEN"},
+    {n: String(trip.travelers), l:"TRAVELER"+(trip.travelers>1?"S":"")}
+  ];
+  var sx = 80, sy = 168+titleH+64, sw=(W-160-30)/2, sh=118;
+  statList.forEach(function(s,i){
+    var col = i%2, row = Math.floor(i/2);
+    var bx = sx+col*(sw+30), by = sy+row*(sh+18);
+    ctx.fillStyle = "#FBF4E8";
+    roundRectPath(ctx, bx,by,sw,sh,16); ctx.fill();
+    ctx.fillStyle = colors.accent;
+    ctx.font = "800 36px Poppins, Inter, sans-serif";
+    ctx.fillText(s.n, bx+22, by+52);
+    ctx.fillStyle = "#9C9284";
+    ctx.font = "700 13px Inter, sans-serif";
+    ctx.fillText(s.l, bx+22, by+82);
+  });
+
+  var y = sy+2*sh+18+56;
+  if(badges.length){
+    ctx.fillStyle = "#28211A";
+    ctx.font = "700 17px Inter, sans-serif";
+    ctx.fillText("BADGES EARNED", 80, y);
+    y += 18;
+    var bx2 = 80;
+    ctx.font = "600 17px Inter, sans-serif";
+    badges.forEach(function(b){
+      var text = b.icon+" "+b.label;
+      var w = ctx.measureText(text).width + 32;
+      if(bx2+w > W-80){ bx2 = 80; y += 48; }
+      ctx.fillStyle = "#F3E6D4";
+      roundRectPath(ctx, bx2, y+8, w, 36, 18); ctx.fill();
+      ctx.fillStyle = "#28211A";
+      ctx.fillText(text, bx2+16, y+32);
+      bx2 += w+10;
+    });
+    y += 74;
+  }
+
+  var highlights = [];
+  (trip.days||[]).forEach(function(d){ d.items.forEach(function(it){ if(it.category==="DETOUR"||it.category==="TRENDING") highlights.push(it.title); }); });
+  if(highlights.length){
+    ctx.fillStyle = "#28211A";
+    ctx.font = "700 17px Inter, sans-serif";
+    ctx.fillText("DISCOVERED ALONG THE WAY", 80, y);
+    y += 36;
+    ctx.font = "500 19px Inter, sans-serif";
+    ctx.fillStyle = "#6B6154";
+    highlights.slice(0,4).forEach(function(h){
+      y += wrapCanvasText(ctx, "• "+h, 80, y, W-160, 26, 1);
+      y += 6;
+    });
+  }
+
+  ctx.font = "600 15px Inter, sans-serif";
+  ctx.fillStyle = "#9C9284";
+  ctx.fillText("Planned with EnRoute", 80, H-70);
+}
+
 function renderNavbar(){
-  if(state.screen==="wizard" || state.screen==="summary" || state.screen==="generating"){ return ""; }
+  if(state.screen==="wizard" || state.screen==="summary" || state.screen==="generating" || state.screen==="wrapped"){ return ""; }
   var tabs = [
     {id:"home", label:"Home", icon:iconHome},
     {id:"explore", label:"Explore", icon:iconExplore},
@@ -1238,6 +1535,7 @@ function renderNavbar(){
   ];
   var active = state.screen;
   if(active==="timeline") active="trips";
+  if(active==="farfinder") active="explore";
   var html = "";
   tabs.forEach(function(t){
     html += '<button class="nav-item '+(active===t.id?"active":"")+'" data-action="nav" data-target="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
@@ -1258,6 +1556,7 @@ function renderHome(){
   html += '</div>';
   html += '<div class="px">';
   html += '<button class="plan-btn" data-action="start-wizard"><span style="font-size:19px;">+</span> Plan a new trip</button>';
+  html += '<button class="btn-secondary" style="width:100%; margin-top:12px; border-radius:50px;" data-action="surprise-me">🎲 Surprise me</button>';
 
   html += '<div class="section-head"><h3>Upcoming</h3></div>';
   if(upcoming){
@@ -1368,7 +1667,47 @@ function renderExplore(){
     html += '<button class="filter-chip '+((state.exploreFilter||"all")===f[0]?"active":"")+'" data-action="explore-filter" data-value="'+f[0]+'">'+f[1]+'</button>';
   });
   html += '</div>';
+  html += '<button class="tl-action-btn" style="width:100%; margin-bottom:18px;" data-action="nav" data-target="farfinder">⏱️ How far can I go? — plan by time, not destination</button>';
   html += '<div id="explore-grid">'+renderExploreGridItems()+'</div>';
+  html += '</div>';
+  return html;
+}
+
+/* ============================================================
+   RENDER: FAR FINDER (reverse planning — time budget -> reachable destinations)
+============================================================ */
+function renderFarFinder(){
+  var ff = state.farFinder;
+  var html = '<div class="wizard-head">';
+  html += '<button class="icon-btn" data-action="nav" data-target="explore"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>';
+  html += '<span style="font-weight:700; font-size:15px;">How far can I go?</span>';
+  html += '</div>';
+  html += '<div class="px">';
+  html += '<p class="wizard-sub" style="margin-bottom:20px;">Tell us how much time you have and where from — we\'ll suggest destinations that fit, round trip.</p>';
+  html += '<div class="field"><label>Starting from</label><input type="text" data-field="farOrigin" value="'+esc(ff.origin)+'" placeholder="e.g. Bangalore"></div>';
+  html += '<div class="field"><label>Hours available (round trip driving)</label><div class="stepper-row">';
+  html += '<button class="stepper-btn" data-action="farfinder-dec">−</button><span style="font-size:18px; font-weight:700; width:36px; text-align:center;">'+ff.hours+'h</span><button class="stepper-btn" data-action="farfinder-inc">+</button>';
+  html += '</div></div>';
+  html += '<button class="plan-btn" data-action="farfinder-search">Find destinations</button>';
+  html += '<p style="font-size:12px; color:var(--gray); margin:10px 2px 0;">Uses straight-line distance estimates, not live traffic — a quick-inspiration tool, not a precise plan.</p>';
+  html += '<div id="farfinder-results" style="margin-top:22px;">'+renderFarFinderResults()+'</div>';
+  html += '</div>';
+  return html;
+}
+function renderFarFinderResults(){
+  var ff = state.farFinder;
+  if(!ff.results) return "";
+  if(!ff.results.length) return '<p class="empty-note">Nothing reachable in that time from a recognised location — try a nearby larger city name, or more hours.</p>';
+  var html = '<div class="explore-grid">';
+  ff.results.forEach(function(r){
+    var theme = THEME_MAP[destDominantTag(r.name)] || DEFAULT_THEME;
+    html += '<div class="explore-card" data-action="explore-dest" data-name="'+r.name+'">'+
+      '<div class="explore-card-hero" style="background:'+heroGrad(theme)+'">'+heroMotif(theme.motif,"small")+'</div>'+
+      '<div class="explore-card-body">'+
+        '<p class="explore-name">'+r.name+'</p>'+
+        '<p class="explore-sub">~'+r.oneWayMin+' min each way · ~'+r.km+' km</p>'+
+      '</div></div>';
+  });
   html += '</div>';
   return html;
 }
@@ -1403,7 +1742,22 @@ function renderProfile(){
     '</p>';
   html += '<p style="font-size:12px; color:var(--gray); margin:8px 0 0; line-height:1.5;">Needs <b>Places API (New)</b> and <b>Routes API</b> enabled with billing on in your Google Cloud project. Keys are stored only in this browser and sent directly to Google — restrict the key by HTTP referrer once you\'re done testing.</p>';
   html += '</div>';
-  html += '<p class="wizard-sub">Trips are saved locally in this browser. Clearing site data or switching devices will not carry them over.</p>';
+
+  if(state.favorites.length){
+    html += '<div class="section-head" style="margin-top:26px;"><h3>Saved spots</h3></div>';
+    state.favorites.slice().reverse().forEach(function(f){
+      var idx = state.favorites.indexOf(f);
+      html += '<div class="trip-row" style="cursor:default;">';
+      if(f.photoUrl) html += '<img src="'+esc(f.photoUrl)+'" alt="" style="width:52px; height:52px; border-radius:12px; object-fit:cover; flex:none;">';
+      else html += '<div class="trip-thumb">'+iconStar(true)+'</div>';
+      html += '<div style="flex:1; min-width:0;"><p class="trip-row-title">'+esc(f.title)+'</p><p class="trip-row-sub">'+esc(f.subtitle||"")+'</p></div>';
+      html += '<a class="tl-mini-btn" href="'+mapsPlaceLink(f.lat,f.lon,f.title)+'" target="_blank" rel="noopener" style="flex:none;">'+iconPin()+'</a>';
+      html += '<button class="icon-btn" style="width:34px; height:34px; flex:none;" data-action="remove-favorite" data-idx="'+idx+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+      html += '</div>';
+    });
+  }
+
+  html += '<p class="wizard-sub" style="margin-top:26px;">Trips are saved locally in this browser. Clearing site data or switching devices will not carry them over.</p>';
   if(state.trips.length){
     html += '<button class="btn-danger-outline" data-action="clear-all">Clear all saved trips</button>';
   }
@@ -1589,6 +1943,12 @@ function renderTimeline(){
     } else {
       html += '<p class="tl-item-title">'+esc(item.title)+'</p><p class="tl-item-sub">'+esc(item.subtitle)+'</p>';
     }
+    if(typeof item.lat==="number" && typeof item.lon==="number"){
+      html += '<div class="tl-mini-actions">';
+      html += '<a class="tl-mini-btn" href="'+mapsPlaceLink(item.lat,item.lon,item.title)+'" target="_blank" rel="noopener">'+iconPin()+'<span>'+(item.category==="DETOUR"?"Add to Maps":"Open in Maps")+'</span></a>';
+      html += '<button class="tl-mini-btn" data-action="save-favorite" data-title="'+esc(item.title)+'" data-subtitle="'+esc(item.subtitle||"")+'" data-photo="'+esc(item.photoUrl||"")+'" data-lat="'+item.lat+'" data-lon="'+item.lon+'">'+iconStar()+'<span>Save</span></button>';
+      html += '</div>';
+    }
     html += '</div>';
     html += '</div>';
   });
@@ -1622,6 +1982,13 @@ function renderSummary(){
   html += '<p class="wizard-sub" style="margin-bottom:10px;">'+fmtDateShort(trip.startDate)+' – '+fmtDateShort(trip.endDate)+' · '+stats.dayCount+' day'+(stats.dayCount>1?"s":"")+'</p>';
   html += dataQualityBadgeHTML(trip);
 
+  var badges = computeBadges(trip);
+  if(badges.length){
+    html += '<div class="badge-row">';
+    badges.forEach(function(b){ html += '<span class="badge-pill">'+b.icon+' '+b.label+'</span>'; });
+    html += '</div>';
+  }
+
   html += '<div class="route-strip">';
   html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(trip.departureLocation||"Home")+'</span></div>';
   html += '<div class="route-line"></div>';
@@ -1633,6 +2000,15 @@ function renderSummary(){
   html += '<div class="route-line"></div>';
   html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(trip.returnLocation||trip.departureLocation||"Home")+'</span></div>';
   html += '</div>';
+
+  var routeSVG = buildRouteMapSVG(trip.waypoints);
+  if(routeSVG){
+    html += '<div class="review-block" style="padding:14px;">'+routeSVG+'</div>';
+  }
+  var directionsUrl = mapsDirectionsLink(trip.waypoints);
+  if(directionsUrl){
+    html += '<a class="tl-action-btn" style="display:flex; margin-bottom:14px; text-decoration:none; box-sizing:border-box;" href="'+directionsUrl+'" target="_blank" rel="noopener">'+iconPin()+'<span style="margin-left:8px;">Open full route in Google Maps</span></a>';
+  }
 
   var isLive = trip.routingSource==="live";
   html += '<div class="summary-stat-grid">';
@@ -1656,6 +2032,21 @@ function renderSummary(){
   if(!trip.interests || !trip.interests.length) html += '<span class="interest-pill">No interests set</span>';
   html += '</div>';
 
+  html += '<p class="empty-note" style="padding-top:0; padding-bottom:14px;">'+esc(explainBreakCadence(trip.ages||[30], stats.maxStretchMin))+'</p>';
+
+  var packingList = buildPackingList(trip);
+  var packedItems = trip.packedItems || {};
+  html += '<div class="review-block">';
+  html += '<p class="review-label" style="margin-bottom:10px;">Packing list</p>';
+  packingList.forEach(function(item, i){
+    var checked = !!packedItems[i];
+    html += '<div data-action="toggle-packed" data-trip="'+trip.id+'" data-idx="'+i+'" style="display:flex; align-items:center; gap:10px; padding:7px 0; cursor:pointer;">'+
+      '<span style="width:18px; height:18px; border-radius:5px; border:1.5px solid var(--line); flex:none; display:flex; align-items:center; justify-content:center; background:'+(checked?theme.accent:"transparent")+'; border-color:'+(checked?theme.accent:"var(--line)")+';">'+(checked?'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>':'')+'</span>'+
+      '<span style="font-size:14.5px; color:var(--ink); '+(checked?"text-decoration:line-through; color:var(--gray);":"")+'">'+esc(item)+'</span>'+
+      '</div>';
+  });
+  html += '</div>';
+
   html += '<p class="empty-note" style="padding-top:0;">'+
     (isLive
       ? "Drive time and distance use Google Maps traffic-aware routing at the time this trip was generated. Traffic conditions may change by the time you travel."
@@ -1671,6 +2062,7 @@ function renderSummary(){
   html += '</div>';
   html += '<div class="tl-actions">';
   html += '<button class="tl-action-btn primary" style="background:'+theme.accent+'; border-color:'+theme.accent+';" data-action="export-pdf">Export PDF</button>';
+  html += '<button class="tl-action-btn" data-action="nav" data-target="wrapped">✨ Get your Trip Wrapped</button>';
   html += '</div>';
   html += '</div>';
   return html;
@@ -1691,9 +2083,12 @@ function render(){
   else if(state.screen==="profile") html = renderProfile();
   else if(state.screen==="summary") html = renderSummary();
   else if(state.screen==="generating") html = renderGenerating();
+  else if(state.screen==="wrapped") html = renderWrapped();
+  else if(state.screen==="farfinder") html = renderFarFinder();
   screenEl.innerHTML = html;
   navEl.innerHTML = renderNavbar();
   screenEl.scrollTop = 0;
+  if(state.screen==="wrapped") drawWrappedCanvas();
 }
 
 /* ============================================================
@@ -1711,6 +2106,10 @@ function handleInput(e){
     state.exploreQuery = t.value;
     var gridEl = document.getElementById("explore-grid");
     if(gridEl) gridEl.innerHTML = renderExploreGridItems();
+    return;
+  }
+  if(field==="farOrigin"){
+    state.farFinder.origin = t.value;
     return;
   }
   if(!state.wizard) return;
@@ -1780,6 +2179,39 @@ function handleClick(e){
   else if(action==="start-wizard"){
     state.wizard = newWizard();
     state.screen = "wizard";
+    render();
+  }
+  else if(action==="surprise-me"){
+    var lastTrip = state.trips.length ? state.trips[state.trips.length-1] : null;
+    var surpriseOriginGeo = lastTrip && lastTrip.departureLocation ? findDest(lastTrip.departureLocation) : null;
+    var destPool = FEATURED;
+    if(surpriseOriginGeo){
+      // keep the surprise a plausible road trip, not a two-day cross-country trek
+      var nearby = FEATURED.filter(function(name){
+        var g = findDest(name);
+        return g && haversineKm(surpriseOriginGeo.lat,surpriseOriginGeo.lon,g.lat,g.lon)<450;
+      });
+      if(nearby.length) destPool = nearby;
+    }
+    var dest = destPool[Math.floor(Math.random()*destPool.length)];
+    var w = newWizard(dest);
+    var start = new Date();
+    start.setDate(start.getDate() + 7 + Math.floor(Math.random()*14));
+    var end = new Date(start);
+    end.setDate(end.getDate() + (2+Math.floor(Math.random()*3)));
+    w.data.startDate = dateToISO(start);
+    w.data.endDate = dateToISO(end);
+    if(lastTrip && lastTrip.departureLocation){
+      w.data.departureLocation = lastTrip.departureLocation;
+      w.data.departurePlace = lastTrip.departurePlace||null;
+    }
+    var intentions = Object.keys(INTENTION_LABELS);
+    w.data.intention = intentions[Math.floor(Math.random()*intentions.length)];
+    var interestKeys = Object.keys(INTEREST_LABELS);
+    w.data.interests = [interestKeys[Math.floor(Math.random()*interestKeys.length)]];
+    state.wizard = w;
+    state.screen = "wizard";
+    state.wizard.step = w.data.departureLocation ? 8 : 1;
     render();
   }
   else if(action==="explore-dest"){
@@ -1897,6 +2329,87 @@ function handleClick(e){
     setMapsKey(keyInput ? keyInput.value : "");
     render();
   }
+  else if(action==="save-favorite"){
+    var favTitle = el.getAttribute("data-title");
+    var already = state.favorites.some(function(f){ return f.title===favTitle; });
+    if(already){
+      state.favorites = state.favorites.filter(function(f){ return f.title!==favTitle; });
+    } else {
+      state.favorites.push({
+        title: favTitle, subtitle: el.getAttribute("data-subtitle")||"",
+        photoUrl: el.getAttribute("data-photo")||null,
+        lat: parseFloat(el.getAttribute("data-lat")), lon: parseFloat(el.getAttribute("data-lon")),
+        savedAt: Date.now()
+      });
+    }
+    saveFavorites(state.favorites);
+    el.classList.toggle("saved", !already);
+    el.querySelector("span").textContent = already ? "Save" : "Saved";
+  }
+  else if(action==="remove-favorite"){
+    var favIdx = +el.getAttribute("data-idx");
+    state.favorites.splice(favIdx,1);
+    saveFavorites(state.favorites);
+    render();
+  }
+  else if(action==="download-wrapped"){
+    var wrappedCanvas = document.getElementById("wrapped-canvas");
+    if(wrappedCanvas){
+      var wLink = document.createElement("a");
+      wLink.href = wrappedCanvas.toDataURL("image/png");
+      wLink.download = "trip-wrapped.png";
+      document.body.appendChild(wLink); wLink.click();
+      setTimeout(function(){ document.body.removeChild(wLink); }, 300);
+    }
+  }
+  else if(action==="farfinder-inc"){
+    state.farFinder.hours = Math.min(14, state.farFinder.hours+1);
+    render();
+  }
+  else if(action==="farfinder-dec"){
+    state.farFinder.hours = Math.max(1, state.farFinder.hours-1);
+    render();
+  }
+  else if(action==="farfinder-search"){
+    var originGeoFF = findDest(state.farFinder.origin);
+    if(!originGeoFF){
+      state.farFinder.results = [];
+    } else {
+      var budgetMin = state.farFinder.hours*60;
+      state.farFinder.results = FEATURED.map(function(name){
+        var destGeoFF = findDest(name);
+        if(!destGeoFF) return null;
+        var oneWayMin = estimateDriveMinutes(originGeoFF, destGeoFF);
+        if(oneWayMin*2 > budgetMin) return null;
+        return {name:name, oneWayMin:oneWayMin, km:Math.round(haversineKm(originGeoFF.lat,originGeoFF.lon,destGeoFF.lat,destGeoFF.lon)*1.32)};
+      }).filter(Boolean).sort(function(a,b){ return a.oneWayMin-b.oneWayMin; });
+    }
+    render();
+  }
+  else if(action==="toggle-packed"){
+    var packTrip = state.trips.find(function(t){ return t.id===el.getAttribute("data-trip"); });
+    if(packTrip){
+      var packIdx = el.getAttribute("data-idx");
+      packTrip.packedItems = packTrip.packedItems || {};
+      packTrip.packedItems[packIdx] = !packTrip.packedItems[packIdx];
+      saveTrips(state.trips);
+      render();
+    }
+  }
+}
+
+var CONFETTI_COLORS = ["#D9553A","#3C5A45","#1F6E86","#8B5E34","#C7B896"];
+function celebrate(){
+  for(var i=0;i<40;i++){
+    var piece = document.createElement("div");
+    piece.className = "confetti-piece";
+    piece.style.left = (Math.random()*100)+"vw";
+    piece.style.background = CONFETTI_COLORS[Math.floor(Math.random()*CONFETTI_COLORS.length)];
+    piece.style.animationDuration = (1.8+Math.random()*1.4)+"s";
+    piece.style.animationDelay = (Math.random()*0.3)+"s";
+    document.body.appendChild(piece);
+    setTimeout(function(p){ return function(){ if(p.parentNode) p.parentNode.removeChild(p); }; }(piece), 3600);
+  }
 }
 
 function submitWizard(){
@@ -1926,12 +2439,14 @@ function submitWizard(){
     trip.stats = built.stats;
     trip.routingSource = built.routingSource;
     trip.foodSource = built.foodSource;
+    trip.waypoints = built.waypoints;
     state.trips.push(trip);
     saveTrips(state.trips);
     state.currentTripId = trip.id;
     state.activeDay = 0;
     state.screen = "timeline";
     render();
+    celebrate();
   }).catch(function(err){
     console.error("Itinerary generation failed", err);
     alert("Something went wrong building the itinerary. Please try again.");
@@ -1951,6 +2466,8 @@ function printItinerary(){
   var area = document.getElementById("print-area");
   var html = '<p class="p-title">'+esc(trip.title)+'</p>';
   html += '<p class="p-dates">'+fmtDateShort(trip.startDate)+' – '+fmtDateShort(trip.endDate)+' · '+trip.days.length+' day(s) · '+trip.travelers+' traveler(s)</p>';
+  var printRouteSVG = buildRouteMapSVG(trip.waypoints, 700, 320);
+  if(printRouteSVG) html += '<div style="margin:10px 0 18px; max-width:500px;">'+printRouteSVG+'</div>';
   trip.days.forEach(function(day){
     html += '<p class="p-day">'+day.label+' — '+fmtDateShort(day.date)+'</p>';
     day.items.forEach(function(item){
