@@ -805,6 +805,30 @@ function resolveFuelStops(originGeo, destGeo, legMin, maxStretch){
   }));
 }
 
+/* A real town/locality name at each break point — shown alongside the road name, and used
+   in place of it when the road-name extraction doesn't produce something clean. */
+function resolveWaypointNames(originGeo, destGeo, legMin, maxStretch){
+  if(!hasMapsKey() || !originGeo || !destGeo) return Promise.resolve([]);
+  var fractions = [], remaining = legMin, covered = 0;
+  while(remaining > maxStretch){ covered += maxStretch; fractions.push(covered/legMin); remaining -= maxStretch; }
+  if(!fractions.length) return Promise.resolve([]);
+  return Promise.all(fractions.map(function(frac){
+    var pt = {lat: originGeo.lat+(destGeo.lat-originGeo.lat)*frac, lon: originGeo.lon+(destGeo.lon-originGeo.lon)*frac};
+    return fetch("https://places.googleapis.com/v1/places:searchNearby", {
+      method:"POST",
+      headers:{"Content-Type":"application/json", "X-Goog-Api-Key":getMapsKey(), "X-Goog-FieldMask":"places.displayName"},
+      body: JSON.stringify({
+        includedTypes:["locality"],
+        maxResultCount:1,
+        locationRestriction:{circle:{center:{latitude:pt.lat, longitude:pt.lon}, radius:20000}}
+      })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      var p = d.places && d.places[0];
+      return (p && p.displayName) ? p.displayName.text : null;
+    }).catch(function(){ return null; });
+  }));
+}
+
 /* A popular tourist_attraction near the midpoint of a long drive — a "slight detour" suggestion.
    Only offered for leisure/exploration trips on legs long enough to be worth a stop. */
 function resolveOnTheWaySpot(originGeo, destGeo, trip, usedTitles){
@@ -902,20 +926,21 @@ function genericStop(destName, interests, kind){
   return {title:tag+" spot near "+destName, subtitle:"A short detour worth the stop — check recent reviews before you go."};
 }
 
-function buildDriveSegment(items, curMinRef, remainingMin, maxStretch, destLabel, kmTotal, fuelStops, viaRoad){
+function buildDriveSegment(items, curMinRef, remainingMin, maxStretch, destLabel, kmTotal, fuelStops, viaRoad, waypointNames){
   var totalMin = remainingMin;
   var covered = 0;
   var breaks = 0;
-  var viaSuffix = viaRoad ? (" via "+viaRoad) : "";
   while(remainingMin > maxStretch){
     var chunk = maxStretch;
     curMinRef.v += chunk;
     covered += chunk;
     var kmMark = kmTotal ? Math.round(kmTotal * (covered/totalMin)) : null;
+    var placeName = waypointNames && waypointNames.length ? waypointNames.shift() : null;
+    var titleSuffix = viaRoad ? (" via "+viaRoad) : (placeName ? (" near "+placeName) : "");
     items.push({
       time:curMinRef.v, category:"DRIVE · "+fmtDur(chunk),
-      title:"On the road toward "+destLabel+viaSuffix,
-      subtitle: kmMark ? "Break suggested near the "+kmMark+" km mark." : "Break suggested around here.",
+      title:"On the road toward "+destLabel+titleSuffix,
+      subtitle: (kmMark ? "Break suggested near the "+kmMark+" km mark." : "Break suggested around here.")+(placeName?(" Close to "+placeName+"."):""),
       driveMin: chunk
     });
     items.push({
@@ -964,19 +989,28 @@ function generateItinerary(trip){
     // The leg that arrives at the destination starts from the stopover when there is one.
     var legOriginGeo = stopoverGeo || originGeo;
 
+    var outboundLegMin = estimateDriveMinutes(legOriginGeo, destGeo);
+    var preLegMin = hasStopover ? estimateDriveMinutes(originGeo, stopoverGeo) : 0;
+
     return Promise.all([
       resolveRouting(legOriginGeo, destGeo),
       resolveNearbyFood(destGeo),
       resolveOnTheWaySpot(legOriginGeo, destGeo, trip, usedTitles),
-      resolveFuelStops(legOriginGeo, destGeo, estimateDriveMinutes(legOriginGeo, destGeo), maxStretch),
-      hasStopover ? resolveRouting(originGeo, stopoverGeo) : Promise.resolve(null)
+      resolveFuelStops(legOriginGeo, destGeo, outboundLegMin, maxStretch),
+      hasStopover ? resolveRouting(originGeo, stopoverGeo) : Promise.resolve(null),
+      resolveWaypointNames(legOriginGeo, destGeo, outboundLegMin, maxStretch),
+      hasStopover ? resolveWaypointNames(originGeo, stopoverGeo, preLegMin, maxStretch) : Promise.resolve([])
     ]).then(function(res){
       var outboundRouting = res[0], realFood = res[1], onTheWaySpot = res[2], fuelStops = res[3], preRouting = res[4];
+      var outboundWaypoints = res[5], preWaypoints = res[6];
       var sameReturn = !returnGeoRaw;
       var returnGeo = returnGeoRaw || originGeo;
 
-      var backRoutingPromise = sameReturn ? Promise.resolve(outboundRouting) : resolveRouting(destGeo, returnGeo);
-      return backRoutingPromise.then(function(backRouting){
+      var backRoutingPromise = sameReturn
+        ? Promise.resolve([outboundRouting, outboundWaypoints.slice().reverse()])
+        : Promise.all([resolveRouting(destGeo, returnGeo), resolveWaypointNames(destGeo, returnGeo, estimateDriveMinutes(destGeo, returnGeo), maxStretch)]);
+      return backRoutingPromise.then(function(backRes){
+        var backRouting = backRes[0], backWaypoints = backRes[1];
         var outboundKm = outboundRouting.km, outboundMin = outboundRouting.min;
         var backKm = backRouting.km, backMin = backRouting.min;
         var routingSource = (outboundRouting.source==="live" || backRouting.source==="live" || (preRouting && preRouting.source==="live")) ? "live" : "estimated";
@@ -999,7 +1033,7 @@ function generateItinerary(trip){
               title:"Leave from "+(trip.departureLocation || "home"),
               subtitle: trip.goals ? "Keep in mind: "+trip.goals : "Keep snacks and water within reach for the road."
             });
-            buildDriveSegment(items, curS, preRouting.min, maxStretch, stopoverLabel, preRouting.km, null, preRouting.viaRoad);
+            buildDriveSegment(items, curS, preRouting.min, maxStretch, stopoverLabel, preRouting.km, null, preRouting.viaRoad, preWaypoints);
             var stopStayTime = Math.max(curS.v+30, 19*60);
             items.push({time:stopStayTime, category:"STAY", title:"Overnight stop in "+stopoverLabel, subtitle:"A quick overnight before continuing to "+destLabel+" tomorrow."});
           } else if(isFirst){
@@ -1012,7 +1046,8 @@ function generateItinerary(trip){
             });
             if(dayCount===1){
               // same-day trip: drive there, activity, drive back
-              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops, outboundRouting.viaRoad);
+              var sameDayReturnWaypoints = outboundWaypoints.slice().reverse();
+              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops, outboundRouting.viaRoad, outboundWaypoints);
               if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle, photoUrl:onTheWaySpot.photoUrl});
               var act = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING") ;
               cur.v += 60;
@@ -1021,9 +1056,9 @@ function generateItinerary(trip){
               if(viralPick) items.push({time:cur.v+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle, photoUrl:viralPick.photoUrl});
               cur.v += 150;
               var returnKm = outboundKm;
-              buildDriveSegment(items, cur, outboundMin, maxStretch, (trip.returnLocation||trip.departureLocation||"home"), returnKm, null, outboundRouting.viaRoad);
+              buildDriveSegment(items, cur, outboundMin, maxStretch, (trip.returnLocation||trip.departureLocation||"home"), returnKm, null, outboundRouting.viaRoad, sameDayReturnWaypoints);
             } else {
-              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops, outboundRouting.viaRoad);
+              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops, outboundRouting.viaRoad, outboundWaypoints);
               if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle, photoUrl:onTheWaySpot.photoUrl});
               cur.v += 60;
               var act1 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING");
@@ -1042,7 +1077,7 @@ function generateItinerary(trip){
             else { var gb=genericStop(destLabel, trip.interests,"breakfast"); items.push({time:cur2.v, category:"BREAKFAST", title:gb.title, subtitle:gb.subtitle}); }
             items.push({time:cur2.v+60, category:"CHECKOUT", title:"Check out", subtitle:"Settle up and pack the car."});
             cur2.v += 90;
-            buildDriveSegment(items, cur2, backMin, maxStretch, trip.returnLocation || trip.departureLocation || "home", backKm, null, backRouting.viaRoad);
+            buildDriveSegment(items, cur2, backMin, maxStretch, trip.returnLocation || trip.departureLocation || "home", backKm, null, backRouting.viaRoad, backWaypoints);
             items.push({
               time:cur2.v, category:"ARRIVE",
               title:"Back at "+(trip.returnLocation || trip.departureLocation || "home"),
