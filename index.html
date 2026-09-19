@@ -660,6 +660,20 @@ function nearbyRestaurants(lat, lon, radiusMeters){
   }).then(function(r){ return r.json(); }).then(function(d){ return d.places || []; }).catch(function(){ return []; });
 }
 
+/* Google's Routes API has no clean "highway name" field — the closest real signal is the
+   turn-by-turn step instructions. Take the single longest step (almost always the main
+   highway stretch) and pull a road name out of its instruction text on a best-effort basis. */
+function extractPrimaryRoad(route){
+  var steps = [];
+  (route.legs||[]).forEach(function(leg){ (leg.steps||[]).forEach(function(s){ steps.push(s); }); });
+  if(!steps.length) return null;
+  steps.sort(function(a,b){ return (b.distanceMeters||0)-(a.distanceMeters||0); });
+  var text = steps[0].navigationInstruction && steps[0].navigationInstruction.instructions;
+  if(!text) return null;
+  var m = text.match(/\b(?:onto|on|toward)\s+(.+?)[.,]?$/i);
+  var road = (m ? m[1] : text).trim().replace(/\s+/g," ");
+  return road.length ? road : null;
+}
 function computeRoute(originLat, originLon, destLat, destLon){
   var key = getMapsKey();
   if(!key || typeof originLat!=="number" || typeof destLat!=="number") return Promise.resolve(null);
@@ -667,7 +681,7 @@ function computeRoute(originLat, originLon, destLat, destLon){
     method:"POST",
     headers:{
       "Content-Type":"application/json", "X-Goog-Api-Key":key,
-      "X-Goog-FieldMask":"routes.duration,routes.distanceMeters,routes.staticDuration,routes.travelAdvisory.tollInfo"
+      "X-Goog-FieldMask":"routes.duration,routes.distanceMeters,routes.staticDuration,routes.travelAdvisory.tollInfo,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters"
     },
     body: JSON.stringify({
       origin:{location:{latLng:{latitude:originLat, longitude:originLon}}},
@@ -684,7 +698,8 @@ function computeRoute(originLat, originLon, destLat, destLon){
       durationSec: parseInt(route.duration,10),
       distanceMeters: route.distanceMeters,
       tollUnits: tollPrice ? (parseInt(tollPrice.units||0,10) + (tollPrice.nanos||0)/1e9) : null,
-      tollCurrency: tollPrice ? tollPrice.currencyCode : null
+      tollCurrency: tollPrice ? tollPrice.currencyCode : null,
+      viaRoad: extractPrimaryRoad(route)
     };
   }).catch(function(){ return null; });
 }
@@ -712,11 +727,11 @@ function estimateDriveMinutes(originGeo, destGeo){
 function resolveRouting(originGeo, destGeo){
   var fallbackKm = (originGeo && destGeo) ? haversineKm(originGeo.lat,originGeo.lon,destGeo.lat,destGeo.lon)*1.32 : null;
   var fallbackMin = estimateDriveMinutes(originGeo, destGeo);
-  var fallback = {km:fallbackKm, min:fallbackMin, source:"estimated", tollUnits:null, tollCurrency:null};
+  var fallback = {km:fallbackKm, min:fallbackMin, source:"estimated", tollUnits:null, tollCurrency:null, viaRoad:null};
   if(!originGeo || !destGeo || !hasMapsKey()) return Promise.resolve(fallback);
   return computeRoute(originGeo.lat, originGeo.lon, destGeo.lat, destGeo.lon).then(function(res){
     if(!res) return fallback;
-    return {km: res.distanceMeters/1000, min: Math.max(1,Math.round(res.durationSec/60)), source:"live", tollUnits:res.tollUnits, tollCurrency:res.tollCurrency};
+    return {km: res.distanceMeters/1000, min: Math.max(1,Math.round(res.durationSec/60)), source:"live", tollUnits:res.tollUnits, tollCurrency:res.tollCurrency, viaRoad:res.viaRoad};
   });
 }
 
@@ -884,10 +899,11 @@ function genericStop(destName, interests, kind){
   return {title:tag+" spot near "+destName, subtitle:"A short detour worth the stop — check recent reviews before you go."};
 }
 
-function buildDriveSegment(items, curMinRef, remainingMin, maxStretch, destLabel, kmTotal, fuelStops){
+function buildDriveSegment(items, curMinRef, remainingMin, maxStretch, destLabel, kmTotal, fuelStops, viaRoad){
   var totalMin = remainingMin;
   var covered = 0;
   var breaks = 0;
+  var viaSuffix = viaRoad ? (" via "+viaRoad) : "";
   while(remainingMin > maxStretch){
     var chunk = maxStretch;
     curMinRef.v += chunk;
@@ -895,7 +911,7 @@ function buildDriveSegment(items, curMinRef, remainingMin, maxStretch, destLabel
     var kmMark = kmTotal ? Math.round(kmTotal * (covered/totalMin)) : null;
     items.push({
       time:curMinRef.v, category:"DRIVE · "+fmtDur(chunk),
-      title:"On the road toward "+destLabel,
+      title:"On the road toward "+destLabel+viaSuffix,
       subtitle: kmMark ? "Break suggested near the "+kmMark+" km mark." : "Break suggested around here.",
       driveMin: chunk
     });
@@ -915,7 +931,7 @@ function buildDriveSegment(items, curMinRef, remainingMin, maxStretch, destLabel
   items.push({
     time:curMinRef.v, category:"DRIVE · "+fmtDur(remainingMin),
     title:"Arrive in "+destLabel,
-    subtitle: kmTotal ? Math.round(kmTotal)+" km covered on this leg." : "Estimated leg — add a recognised city name for a precise distance.",
+    subtitle: kmTotal ? (Math.round(kmTotal)+" km covered on this leg."+(viaRoad?(" Mostly via "+viaRoad+"."):"")) : "Estimated leg — add a recognised city name for a precise distance.",
     driveMin: remainingMin,
     km: kmTotal || null
   });
@@ -980,7 +996,7 @@ function generateItinerary(trip){
               title:"Leave from "+(trip.departureLocation || "home"),
               subtitle: trip.goals ? "Keep in mind: "+trip.goals : "Keep snacks and water within reach for the road."
             });
-            buildDriveSegment(items, curS, preRouting.min, maxStretch, stopoverLabel, preRouting.km);
+            buildDriveSegment(items, curS, preRouting.min, maxStretch, stopoverLabel, preRouting.km, null, preRouting.viaRoad);
             var stopStayTime = Math.max(curS.v+30, 19*60);
             items.push({time:stopStayTime, category:"STAY", title:"Overnight stop in "+stopoverLabel, subtitle:"A quick overnight before continuing to "+destLabel+" tomorrow."});
           } else if(isFirst){
@@ -993,7 +1009,7 @@ function generateItinerary(trip){
             });
             if(dayCount===1){
               // same-day trip: drive there, activity, drive back
-              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops);
+              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops, outboundRouting.viaRoad);
               if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle, photoUrl:onTheWaySpot.photoUrl});
               var act = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING") ;
               cur.v += 60;
@@ -1002,9 +1018,9 @@ function generateItinerary(trip){
               if(viralPick) items.push({time:cur.v+70, category:"TRENDING", title:viralPick.title, subtitle:viralPick.subtitle, photoUrl:viralPick.photoUrl});
               cur.v += 150;
               var returnKm = outboundKm;
-              buildDriveSegment(items, cur, outboundMin, maxStretch, (trip.returnLocation||trip.departureLocation||"home"), returnKm);
+              buildDriveSegment(items, cur, outboundMin, maxStretch, (trip.returnLocation||trip.departureLocation||"home"), returnKm, null, outboundRouting.viaRoad);
             } else {
-              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops);
+              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm, fuelStops, outboundRouting.viaRoad);
               if(onTheWaySpot) items.push({time: outboundStart+Math.round(outboundMin/2), category:"DETOUR", title:onTheWaySpot.title, subtitle:onTheWaySpot.subtitle, photoUrl:onTheWaySpot.photoUrl});
               cur.v += 60;
               var act1 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING");
@@ -1023,7 +1039,7 @@ function generateItinerary(trip){
             else { var gb=genericStop(destLabel, trip.interests,"breakfast"); items.push({time:cur2.v, category:"BREAKFAST", title:gb.title, subtitle:gb.subtitle}); }
             items.push({time:cur2.v+60, category:"CHECKOUT", title:"Check out", subtitle:"Settle up and pack the car."});
             cur2.v += 90;
-            buildDriveSegment(items, cur2, backMin, maxStretch, trip.returnLocation || trip.departureLocation || "home", backKm);
+            buildDriveSegment(items, cur2, backMin, maxStretch, trip.returnLocation || trip.departureLocation || "home", backKm, null, backRouting.viaRoad);
             items.push({
               time:cur2.v, category:"ARRIVE",
               title:"Back at "+(trip.returnLocation || trip.departureLocation || "home"),
