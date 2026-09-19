@@ -1,0 +1,1788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>EnRoute</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --cream:#FBF4E8;
+    --cream-2:#F4EADB;
+    --ink:#28211A;
+    --ink-soft:#6B6154;
+    --gray:#9C9284;
+    --line:#EEE2CC;
+    --card:#FFFFFF;
+    --tan:#C7B896;
+    --tan-badge:#F3E6D4;
+    --coral:#D9553A;
+    --coral-dark:#B8422B;
+    --coral-bg:#F8DDD2;
+    --green:#3C5A45;
+    --green-bg:#DCE6D3;
+    --green-hero:#6B8F5D;
+    --green-hero-2:#2F4B3A;
+    --blue:#1F6E86;
+    --blue-bg:#D6E7EC;
+    --blue-hero:#6FB7C9;
+    --blue-hero-2:#1F5C74;
+    --heritage:#8B5E34;
+    --heritage-hero:#C79A5D;
+    --heritage-hero-2:#7A5230;
+    --wildlife:#57623C;
+    --wildlife-hero:#8C8F5C;
+    --wildlife-hero-2:#46502F;
+    --nature:#3C6B4A;
+    --nature-hero:#7DA06B;
+    --nature-hero-2:#2E4A34;
+    --accent: var(--coral);
+    --accent-bg: var(--coral-bg);
+    --hero: var(--green-hero);
+    --radius-lg:26px;
+    --radius-md:16px;
+    --radius-sm:12px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --cream:#1E1913;
+      --cream-2:#251F17;
+      --ink:#F5EFE2;
+      --ink-soft:#CDC4B2;
+      --gray:#948A7A;
+      --line:#3B3324;
+      --card:#282219;
+      --tan-badge:#3B3221;
+      --coral-bg:#4A2A22;
+    }
+  }
+  :root[data-theme="dark"]{
+    --cream:#1E1913;
+    --cream-2:#251F17;
+    --ink:#F5EFE2;
+    --ink-soft:#CDC4B2;
+    --gray:#948A7A;
+    --line:#3B3324;
+    --card:#282219;
+    --tan-badge:#3B3221;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--cream);
+    color:var(--ink);
+    font-family:'Inter',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  h1,h2,h3,.serif{font-family:'Poppins',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;}
+  #shell{
+    max-width:480px;
+    margin:0 auto;
+    min-height:100vh;
+    background:var(--cream);
+    position:relative;
+    display:flex;
+    flex-direction:column;
+  }
+  #screen{flex:1; padding-bottom:84px; overflow-x:hidden;}
+  .px{padding-left:22px; padding-right:22px;}
+  /* ---------- Top bars ---------- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:22px 22px 0 22px;
+  }
+  .icon-btn{
+    width:44px; height:44px; border-radius:50%;
+    background:var(--card); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--ink-soft); flex:none;
+  }
+  .icon-btn:hover{filter:brightness(0.97);}
+  /* ---------- Home ---------- */
+  .home-greeting{color:var(--gray); font-size:15px; margin:0 0 2px;}
+  .home-title{font-size:34px; font-weight:800; margin:0; color:var(--ink);}
+  .avatar{
+    width:46px; height:46px; border-radius:50%;
+    background:var(--tan-badge); display:flex; align-items:center; justify-content:center;
+    color:var(--ink-soft);
+  }
+  .plan-btn{
+    width:100%; margin-top:22px;
+    background:var(--coral); color:#fff;
+    border:none; border-radius:50px;
+    padding:17px 20px; font-size:16px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  .plan-btn:hover{filter:brightness(1.05);}
+  .section-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin:30px 0 12px;
+  }
+  .section-head h3{font-size:19px; margin:0; font-weight:700;}
+  .link-accent{color:var(--coral); font-size:14px; font-weight:600; text-decoration:none; cursor:pointer; background:none; border:none; font-family:'Inter',sans-serif;}
+  .upcoming-card{
+    border-radius:var(--radius-lg); overflow:hidden; background:var(--card);
+    border:1px solid var(--line); cursor:pointer;
+    box-shadow:0 10px 28px rgba(140,90,50,0.10);
+  }
+  .hero-ph{
+    height:170px; background:var(--hero, var(--green-hero));
+    display:flex; align-items:center; justify-content:center; color:rgba(0,0,0,0.28);
+    position:relative; overflow:hidden;
+  }
+  .upcoming-body{padding:16px 18px;}
+  .upcoming-row{display:flex; align-items:flex-start; justify-content:space-between; gap:10px;}
+  .upcoming-title{font-size:19px; font-weight:700; margin:0 0 4px;}
+  .upcoming-sub{color:var(--gray); font-size:14px; margin:0;}
+  .badge{
+    background:var(--coral-bg); color:var(--coral-dark); font-size:12.5px; font-weight:700;
+    border-radius:20px; padding:6px 12px; white-space:nowrap; flex:none;
+  }
+  .empty-note{color:var(--gray); font-size:14.5px; line-height:1.5; padding:18px 0;}
+  .trip-row{
+    display:flex; align-items:center; gap:14px;
+    padding:14px 0; border-bottom:1px solid var(--line); cursor:pointer;
+  }
+  .trip-row:last-child{border-bottom:none;}
+  .trip-thumb{
+    width:52px; height:52px; border-radius:var(--radius-sm); flex:none;
+    background:var(--tan-badge); display:flex; align-items:center; justify-content:center; color:var(--gray);
+  }
+  .trip-row-title{font-weight:700; font-size:16px; margin:0 0 2px;}
+  .trip-row-sub{color:var(--gray); font-size:13.5px; margin:0;}
+  .chevron{margin-left:auto; color:var(--gray); flex:none;}
+  /* ---------- Bottom nav ---------- */
+  .navbar{
+    position:absolute; left:0; right:0; bottom:0;
+    background:var(--cream); border-top:1px solid var(--line);
+    display:flex; padding:10px 6px 14px;
+    max-width:480px; margin:0 auto;
+  }
+  .nav-item{
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
+    background:none; border:none; cursor:pointer; color:var(--gray);
+    font-family:'Inter',sans-serif; font-size:12px; font-weight:600; padding:4px 0;
+  }
+  .nav-item.active{color:var(--coral);}
+  /* ---------- Wizard ---------- */
+  .wizard-head{padding:22px; display:flex; align-items:center; gap:14px;}
+  .progress-track{flex:1; height:5px; background:var(--line); border-radius:4px; overflow:hidden;}
+  .progress-fill{height:100%; background:var(--coral); border-radius:4px; transition:width .25s;}
+  .step-count{font-size:13px; color:var(--gray); font-weight:600; flex:none;}
+  .wizard-body{padding:6px 22px 10px;}
+  .wizard-title{font-size:24px; font-weight:700; margin:6px 0 6px;}
+  .wizard-sub{color:var(--gray); font-size:14.5px; margin:0 0 22px; line-height:1.5;}
+  .field{margin-bottom:20px;}
+  .field label{display:block; font-size:13.5px; font-weight:700; color:var(--ink-soft); margin-bottom:8px;}
+  .field input[type=text], .field input[type=date], .field input[type=time], .field input[type=number], .field textarea, .field select{
+    width:100%; padding:14px 15px; border-radius:var(--radius-sm); border:1.5px solid var(--line);
+    background:var(--card); color:var(--ink); font-size:15.5px; font-family:'Inter',sans-serif;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus{outline:none; border-color:var(--coral);}
+  .field textarea{resize:vertical; min-height:80px;}
+  .ac-field{position:relative;}
+  .ac-list{
+    position:absolute; left:0; right:0; top:100%; margin-top:4px; background:var(--card);
+    border:1px solid var(--line); border-radius:var(--radius-sm); box-shadow:0 8px 24px rgba(0,0,0,0.16);
+    z-index:20; overflow:hidden; display:none; max-height:240px; overflow-y:auto;
+  }
+  .ac-list.show{display:block;}
+  .ac-item{padding:12px 15px; font-size:14.5px; cursor:pointer; border-bottom:1px solid var(--line); color:var(--ink);}
+  .ac-item:last-child{border-bottom:none;}
+  .ac-item:hover{background:var(--cream-2);}
+  .ac-hint{padding:10px 15px; font-size:12px; color:var(--gray); line-height:1.4;}
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .row-2{display:flex; gap:12px;}
+  .row-2 .field{flex:1;}
+  .chip-wrap{display:flex; flex-wrap:wrap; gap:10px;}
+  .chip{
+    padding:11px 17px; border-radius:24px; border:1.5px solid var(--line);
+    background:var(--card); color:var(--ink-soft); font-size:14.5px; font-weight:600;
+    cursor:pointer; font-family:'Inter',sans-serif; display:flex; align-items:center; gap:6px;
+  }
+  .chip.selected{background:var(--coral); border-color:var(--coral); color:#fff;}
+  .chip .order-badge{
+    background:rgba(255,255,255,0.3); border-radius:50%; width:18px; height:18px;
+    font-size:11px; display:flex; align-items:center; justify-content:center;
+  }
+  .traveler-row{display:flex; align-items:center; gap:12px; margin-bottom:10px;}
+  .traveler-row span{width:82px; font-size:14px; color:var(--ink-soft); flex:none;}
+  .traveler-row input{flex:1;}
+  .stepper-row{display:flex; align-items:center; gap:14px;}
+  .stepper-btn{
+    width:38px; height:38px; border-radius:50%; border:1.5px solid var(--line); background:var(--card);
+    font-size:18px; color:var(--ink); cursor:pointer;
+  }
+  .wizard-nav{display:flex; gap:12px; padding:10px 22px 24px;}
+  .btn-primary{
+    flex:1; background:var(--coral); color:#fff; border:none; border-radius:50px;
+    padding:16px; font-size:15.5px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  .btn-secondary{
+    flex:none; background:var(--card); color:var(--ink); border:1.5px solid var(--line); border-radius:50px;
+    padding:16px 22px; font-size:15.5px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  .review-block{background:var(--card); border:1px solid var(--line); border-radius:var(--radius-md); padding:16px 18px; margin-bottom:14px;}
+  .review-label{font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:var(--gray); font-weight:700; margin:0 0 4px;}
+  .review-value{font-size:15px; margin:0; color:var(--ink);}
+  .info-note{
+    background:var(--tan-badge); border-radius:var(--radius-md); padding:14px 16px;
+    font-size:13.5px; color:var(--ink-soft); line-height:1.5; margin-bottom:18px;
+  }
+  /* ---------- Timeline ---------- */
+  .tl-hero{height:280px; background:var(--hero); display:flex; align-items:flex-start; justify-content:space-between; padding:22px; position:relative; overflow:hidden;}
+  .tl-body{background:var(--cream); padding:22px; position:relative; top:-1px;}
+  .tl-title{font-size:28px; font-weight:800; margin:0 0 4px;}
+  .tl-dates{color:var(--gray); font-size:15px; margin:0 0 18px;}
+  .day-tabs{display:flex; gap:22px; border-bottom:1px solid var(--line); margin-bottom:22px; overflow-x:auto;}
+  .day-tab{
+    background:none; border:none; padding:0 0 12px; font-size:15px; font-weight:700; color:var(--gray);
+    cursor:pointer; white-space:nowrap; font-family:'Inter',sans-serif; position:relative; flex:none;
+  }
+  .day-tab.active{color:var(--accent);}
+  .day-tab.active::after{
+    content:""; position:absolute; left:0; right:0; bottom:0; height:2px; background:var(--accent);
+  }
+  .tl-item{display:flex; gap:14px; margin-bottom:26px; position:relative;}
+  .tl-time{width:56px; flex:none; text-align:right; padding-top:2px;}
+  .tl-time .hm{font-weight:700; font-size:15px; display:block;}
+  .tl-time .ap{font-size:11px; color:var(--gray); letter-spacing:0.03em;}
+  .tl-marker{display:flex; flex-direction:column; align-items:center; flex:none; padding-top:6px;}
+  .tl-dot{width:10px; height:10px; border-radius:50%; background:var(--accent); flex:none;}
+  .tl-line{width:1.5px; flex:1; background:var(--line); margin-top:4px;}
+  .tl-item:last-child .tl-line{display:none;}
+  .tl-content{flex:1; padding-bottom:6px;}
+  .tl-cat{
+    color:var(--accent); font-size:11.5px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; margin:0 0 4px;
+    display:flex; align-items:center; gap:6px;
+  }
+  .tl-item-title{font-size:17.5px; font-weight:700; margin:0 0 4px; font-family:'Poppins',sans-serif;}
+  .tl-item-sub{color:var(--gray); font-size:14px; margin:0; line-height:1.45;}
+  .tl-actions{display:flex; gap:12px; margin-top:8px;}
+  .tl-action-btn{
+    flex:1; display:flex; align-items:center; justify-content:center; gap:8px;
+    background:var(--card); border:1.5px solid var(--line); border-radius:50px; padding:14px;
+    font-size:14.5px; font-weight:700; color:var(--ink); cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  .tl-action-btn.primary{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .more-menu{
+    position:absolute; top:60px; right:22px; background:var(--card); border:1px solid var(--line);
+    border-radius:var(--radius-sm); box-shadow:0 8px 24px rgba(0,0,0,0.14); overflow:hidden; z-index:5;
+  }
+  .more-menu button{
+    display:block; width:100%; text-align:left; padding:13px 18px; background:none; border:none;
+    font-size:14.5px; color:var(--ink); cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  .more-menu button:hover{background:var(--cream-2);}
+  .more-menu button.danger{color:#B3402C;}
+  /* ---------- Simple pages ---------- */
+  .page-title{font-size:28px; font-weight:800; padding:22px 22px 6px;}
+  .search-bar{
+    display:flex; align-items:center; gap:10px; background:var(--card);
+    border:1.5px solid var(--line); border-radius:50px; padding:13px 18px; margin-bottom:16px;
+    color:var(--gray);
+  }
+  .search-bar input{
+    border:none; outline:none; background:none; flex:1; font-size:15px; color:var(--ink);
+    font-family:'Inter',sans-serif;
+  }
+  .filter-row{display:flex; gap:9px; overflow-x:auto; padding-bottom:4px; margin-bottom:20px;}
+  .filter-chip{
+    flex:none; padding:9px 16px; border-radius:24px; border:1.5px solid var(--line);
+    background:var(--card); color:var(--ink-soft); font-size:13.5px; font-weight:600;
+    cursor:pointer; font-family:'Inter',sans-serif; white-space:nowrap;
+  }
+  .filter-chip.active{background:var(--coral); border-color:var(--coral); color:#fff;}
+  .explore-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .explore-card{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius-md);
+    overflow:hidden; cursor:pointer; box-shadow:0 8px 20px rgba(140,90,50,0.08);
+  }
+  .explore-card-hero{height:100px; position:relative; overflow:hidden;}
+  .explore-card-body{padding:12px 14px 14px;}
+  .explore-name{font-weight:700; font-size:15.5px; margin:0 0 3px; font-family:'Poppins',sans-serif;}
+  .explore-sub{color:var(--gray); font-size:12.5px; margin:0; line-height:1.4;}
+  .explore-tag{
+    display:inline-block; margin-top:8px; background:var(--tan-badge); color:var(--ink-soft);
+    font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px;
+  }
+  .profile-row{display:flex; justify-content:space-between; align-items:center; padding:16px 0; border-bottom:1px solid var(--line);}
+  .profile-row:last-child{border-bottom:none;}
+  .stat-row{display:flex; gap:12px; margin-bottom:22px;}
+  .stat-card{
+    flex:1; background:var(--card); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:16px 10px; text-align:center; box-shadow:0 8px 20px rgba(140,90,50,0.08);
+  }
+  .stat-num{font-size:24px; font-weight:800; color:var(--coral); font-family:'Poppins',sans-serif; display:block;}
+  .stat-label{font-size:11.5px; color:var(--gray); font-weight:600; margin-top:2px; display:block;}
+  .btn-danger-outline{
+    width:100%; margin-top:20px; background:var(--card); color:#B3402C; border:1.5px solid #E3B7AA;
+    border-radius:50px; padding:15px; font-weight:700; font-size:14.5px; cursor:pointer; font-family:'Inter',sans-serif;
+  }
+  a{color:inherit;}
+  ::selection{background:var(--accent-bg);}
+  /* ---------- Infographic summary ---------- */
+  .summary-hero{padding:26px 22px 10px;}
+  .summary-stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0;}
+  .route-strip{
+    display:flex; align-items:center; gap:6px; background:var(--card); border:1px solid var(--line);
+    border-radius:var(--radius-md); padding:18px 14px; margin-bottom:18px; box-shadow:0 8px 20px rgba(140,90,50,0.08);
+  }
+  .route-node{display:flex; flex-direction:column; align-items:center; flex:none; width:74px;}
+  .route-dot{width:14px; height:14px; border-radius:50%; background:var(--accent); margin-bottom:6px;}
+  .route-label{font-size:11.5px; font-weight:700; text-align:center; line-height:1.25; color:var(--ink-soft);}
+  .route-line{flex:1; height:2px; background:var(--line); position:relative; top:-13px;}
+  .interest-pill-row{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px;}
+  .interest-pill{
+    background:var(--accent-bg); color:var(--accent); font-size:12.5px; font-weight:700;
+    padding:7px 14px; border-radius:20px;
+  }
+  /* ---------- Print ---------- */
+  #print-area{display:none;}
+  @media print{
+    body *{ visibility:hidden; }
+    #print-area, #print-area *{ visibility:visible; }
+    #print-area{
+      display:block; position:absolute; left:0; top:0; width:100%;
+      background:#fff; color:#1a1a1a; padding:0;
+    }
+    .p-title{font-family:'Poppins',sans-serif; font-size:24px; font-weight:800; margin:0 0 4px;}
+    .p-dates{color:#555; font-size:13px; margin:0 0 18px;}
+    .p-day{font-family:'Poppins',sans-serif; font-size:16px; font-weight:700; margin:22px 0 10px; border-bottom:2px solid #ddd; padding-bottom:6px;}
+    .p-item{display:flex; gap:12px; padding:8px 0; border-bottom:1px solid #eee; page-break-inside:avoid;}
+    .p-time{width:64px; flex:none; font-weight:700; font-size:12.5px; color:#222;}
+    .p-icon{flex:none; width:20px; color:#444; padding-top:1px;}
+    .p-body{flex:1;}
+    .p-cat{font-size:9.5px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; color:#777; margin:0 0 2px;}
+    .p-item-title{font-size:13.5px; font-weight:700; margin:0 0 2px; color:#111;}
+    .p-item-sub{font-size:11.5px; color:#666; margin:0;}
+  }
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="screen"></div>
+  <div class="navbar" id="navbar"></div>
+</div>
+<div id="print-area"></div>
+
+<script>
+/* ============================================================
+   DATA
+============================================================ */
+var DESTS = {
+  "goa":{name:"Goa",lat:15.2993,lon:74.1240},
+  "munnar":{name:"Munnar",lat:10.0889,lon:77.0595},
+  "coorg":{name:"Coorg",lat:12.4244,lon:75.7382},
+  "madikeri":{name:"Coorg",lat:12.4244,lon:75.7382},
+  "ooty":{name:"Ooty",lat:11.4064,lon:76.6932},
+  "wayanad":{name:"Wayanad",lat:11.6854,lon:76.1320},
+  "alleppey":{name:"Alleppey",lat:9.4981,lon:76.3388},
+  "alappuzha":{name:"Alleppey",lat:9.4981,lon:76.3388},
+  "kochi":{name:"Kochi",lat:9.9312,lon:76.2673},
+  "cochin":{name:"Kochi",lat:9.9312,lon:76.2673},
+  "pondicherry":{name:"Pondicherry",lat:11.9416,lon:79.8083},
+  "puducherry":{name:"Pondicherry",lat:11.9416,lon:79.8083},
+  "rishikesh":{name:"Rishikesh",lat:30.0869,lon:78.2676},
+  "manali":{name:"Manali",lat:32.2432,lon:77.1892},
+  "jaipur":{name:"Jaipur",lat:26.9124,lon:75.7873},
+  "udaipur":{name:"Udaipur",lat:24.5854,lon:73.7125},
+  "mysore":{name:"Mysore",lat:12.2958,lon:76.6394},
+  "mysuru":{name:"Mysore",lat:12.2958,lon:76.6394},
+  "hampi":{name:"Hampi",lat:15.3350,lon:76.4600},
+  "gokarna":{name:"Gokarna",lat:14.5479,lon:74.3188},
+  "varkala":{name:"Varkala",lat:8.7379,lon:76.7163},
+  "kanyakumari":{name:"Kanyakumari",lat:8.0883,lon:77.5385},
+  "madurai":{name:"Madurai",lat:9.9252,lon:78.1198},
+  "kodaikanal":{name:"Kodaikanal",lat:10.2381,lon:77.4892},
+  "yercaud":{name:"Yercaud",lat:11.7768,lon:78.2095},
+  "chikmagalur":{name:"Chikmagalur",lat:13.3161,lon:75.7720},
+  "mahabaleshwar":{name:"Mahabaleshwar",lat:17.9307,lon:73.6477},
+  "lonavala":{name:"Lonavala",lat:18.7546,lon:73.4062},
+  "shimla":{name:"Shimla",lat:31.1048,lon:77.1734},
+  "darjeeling":{name:"Darjeeling",lat:27.0410,lon:88.2663},
+  "gangtok":{name:"Gangtok",lat:27.3389,lon:88.6065},
+  "agra":{name:"Agra",lat:27.1767,lon:78.0081},
+  "delhi":{name:"Delhi",lat:28.6139,lon:77.2090},
+  "mumbai":{name:"Mumbai",lat:19.0760,lon:72.8777},
+  "bangalore":{name:"Bangalore",lat:12.9716,lon:77.5946},
+  "bengaluru":{name:"Bangalore",lat:12.9716,lon:77.5946},
+  "chennai":{name:"Chennai",lat:13.0827,lon:80.2707},
+  "trivandrum":{name:"Trivandrum",lat:8.5241,lon:76.9366},
+  "thiruvananthapuram":{name:"Trivandrum",lat:8.5241,lon:76.9366},
+  "kollam":{name:"Kollam",lat:8.8932,lon:76.6141},
+  "kottayam":{name:"Kottayam",lat:9.5916,lon:76.5222},
+  "thrissur":{name:"Thrissur",lat:10.5276,lon:76.2144},
+  "kozhikode":{name:"Kozhikode",lat:11.2588,lon:75.7804},
+  "kannur":{name:"Kannur",lat:11.8745,lon:75.3704},
+  "thekkady":{name:"Thekkady",lat:9.6047,lon:77.1603},
+  "kumarakom":{name:"Kumarakom",lat:9.6186,lon:76.4304}
+};
+
+// Curated stops for a handful of well-known destinations, tagged by interest.
+var CURATED = {
+  "Goa":[
+    {category:"BREAKFAST",title:"Beach shack poha & filter coffee",subtitle:"Right on the sand at Ashwem, quiet before 9.",tags:["beaches"]},
+    {category:"SIGHTSEEING",title:"Chapora Fort viewpoint",subtitle:"Wide bay views, best light near sunset too.",tags:["beaches","heritage"]},
+    {category:"SIGHTSEEING",title:"Old Goa churches walk",subtitle:"Basilica of Bom Jesus and Se Cathedral, UNESCO listed.",tags:["heritage"]},
+    {category:"FOOD",title:"Fish curry rice at a family-run udipi",subtitle:"Local favourite, no frills.",tags:["beaches","nature"]},
+    {category:"SIGHTSEEING",title:"Dudhsagar Falls detour",subtitle:"Jeep transfer needed for the last stretch.",tags:["nature","wildlife"]}
+  ],
+  "Munnar":[
+    {category:"BREAKFAST",title:"Kuttanadu rice pancakes",subtitle:"Family-run stop 12 min off the highway.",tags:["tea-estates","nature"]},
+    {category:"SIGHTSEEING",title:"Tea estate viewpoint",subtitle:"Rolling green slopes, best light before 4pm.",tags:["tea-estates"]},
+    {category:"SIGHTSEEING",title:"Eravikulam National Park",subtitle:"Home to the Nilgiri tahr, book the shuttle early.",tags:["wildlife","nature"]},
+    {category:"FOOD",title:"Plantation-style lunch thali",subtitle:"Banana leaf, unlimited servings.",tags:["tea-estates"]},
+    {category:"SIGHTSEEING",title:"Mattupetty Dam & boating",subtitle:"Calm lake views ringed by hills.",tags:["nature"]}
+  ],
+  "Coorg":[
+    {category:"BREAKFAST",title:"Akki roti with chutney",subtitle:"Coorgi breakfast staple, best fresh off the pan.",tags:["tea-estates","nature"]},
+    {category:"SIGHTSEEING",title:"Abbey Falls",subtitle:"Short walk down from the car park, can get crowded midday.",tags:["nature"]},
+    {category:"SIGHTSEEING",title:"Coffee & spice plantation walk",subtitle:"Guided walk through a working estate.",tags:["tea-estates"]},
+    {category:"SIGHTSEEING",title:"Raja's Seat sunset point",subtitle:"Classic Madikeri sunset spot.",tags:["nature","heritage"]},
+    {category:"WILDLIFE",title:"Dubare elephant camp",subtitle:"Riverside camp, morning visits are calmer.",tags:["wildlife"]}
+  ],
+  "Wayanad":[
+    {category:"BREAKFAST",title:"Kappa and fish curry",subtitle:"Tapioca and fish, a Wayanad classic.",tags:["nature"]},
+    {category:"SIGHTSEEING",title:"Chembra Peak trek",subtitle:"Heart-shaped lake at the top, start early.",tags:["nature","wildlife"]},
+    {category:"WILDLIFE",title:"Wayanad Wildlife Sanctuary safari",subtitle:"Book the morning jeep slot in advance.",tags:["wildlife"]},
+    {category:"SIGHTSEEING",title:"Edakkal Caves",subtitle:"Prehistoric rock carvings, moderate climb.",tags:["heritage"]}
+  ],
+  "Alleppey":[
+    {category:"SIGHTSEEING",title:"Backwater houseboat cruise",subtitle:"Half-day cruise through the canals.",tags:["nature","beaches"]},
+    {category:"FOOD",title:"Karimeen fish fry on board",subtitle:"Classic backwater catch, cooked fresh.",tags:["nature"]},
+    {category:"SIGHTSEEING",title:"Alleppey Beach & lighthouse",subtitle:"Quiet in the mornings.",tags:["beaches"]}
+  ],
+  "Ooty":[
+    {category:"BREAKFAST",title:"Brunch at The Fern",subtitle:"4.8★ on Google, 250+ reviews — opens 7:30am, real Nilgiri breakfast spread.",tags:["nature","tea-estates"]},
+    {category:"SIGHTSEEING",title:"Tea Estate Ooty walking trail",subtitle:"4.5★ — free walk through a real working tea garden, ~2km trail, no entry fee.",tags:["tea-estates"]},
+    {category:"SIGHTSEEING",title:"Government Botanical Garden",subtitle:"4.3★, 100k+ reviews — go early on a weekday to skip the crowds.",tags:["nature"]},
+    {category:"SIGHTSEEING",title:"The Tea Factory & Tea Museum",subtitle:"4.2★ — walk-through tour ending in a free tea tasting.",tags:["tea-estates"]},
+    {category:"SIGHTSEEING",title:"Ooty Lake View Point",subtitle:"4.3★ — reviewers say 4:30–6pm has the best light.",tags:["nature"]},
+    {category:"FOOD",title:"Dinner at Angaara Restaurant",subtitle:"4.3★, 5k+ reviews — reliable pick, order the Angaara special kebab.",tags:["nature","tea-estates"]},
+    {category:"FOOD",title:"Kailash Parbat (pure veg)",subtitle:"4.5★, 8k+ reviews — the best-rated vegetarian option in town.",tags:["tea-estates"]},
+    {category:"SIGHTSEEING",title:"Doddabetta Peak viewpoint",subtitle:"Highest point in the Nilgiris.",tags:["nature","tea-estates"]}
+  ],
+  "Hampi":[
+    {category:"SIGHTSEEING",title:"Virupaksha Temple complex",subtitle:"Living temple amid the ruins, dress modestly.",tags:["heritage"]},
+    {category:"SIGHTSEEING",title:"Vittala Temple stone chariot",subtitle:"Iconic carved chariot, best light late afternoon.",tags:["heritage"]},
+    {category:"SIGHTSEEING",title:"Sunset at Matanga Hill",subtitle:"Short climb, wide views over the ruins.",tags:["heritage","nature"]}
+  ]
+};
+
+var THEME_MAP = {
+  "beaches":{key:"blue", heroFrom:"var(--blue-hero)", heroTo:"var(--blue-hero-2)", accent:"var(--blue)", accentBg:"var(--blue-bg)", motif:"waves"},
+  "tea-estates":{key:"green", heroFrom:"var(--green-hero)", heroTo:"var(--green-hero-2)", accent:"var(--green)", accentBg:"var(--green-bg)", motif:"hills"},
+  "nature":{key:"nature", heroFrom:"var(--nature-hero)", heroTo:"var(--nature-hero-2)", accent:"var(--nature)", accentBg:"var(--green-bg)", motif:"hills"},
+  "wildlife":{key:"wildlife", heroFrom:"var(--wildlife-hero)", heroTo:"var(--wildlife-hero-2)", accent:"var(--wildlife)", accentBg:"var(--green-bg)", motif:"hills"},
+  "heritage":{key:"heritage", heroFrom:"var(--heritage-hero)", heroTo:"var(--heritage-hero-2)", accent:"var(--heritage)", accentBg:"var(--tan-badge)", motif:"arch"}
+};
+var DEFAULT_THEME = {key:"coral", heroFrom:"var(--coral)", heroTo:"var(--coral-dark)", accent:"var(--coral)", accentBg:"var(--coral-bg)", motif:"sun"};
+
+var INTEREST_LABELS = {"nature":"Nature","heritage":"Heritage","beaches":"Beaches","tea-estates":"Tea estates","wildlife":"Wildlife"};
+var INTENTION_LABELS = {"leisure":"Leisure","work":"Work","food-hunt":"Food hunt","exploration":"Exploration"};
+var FOOD_LABELS = {"veg":"Vegetarian","non-veg":"Non-vegetarian","vegan":"Vegan","local":"Local & street food","none":"No restrictions"};
+var STAY_LABELS = {"budget":"Budget hotel","midrange":"Mid-range hotel","resort":"Resort","homestay":"Homestay","any":"Not decided yet"};
+
+/* ============================================================
+   HELPERS
+============================================================ */
+function haversineKm(lat1,lon1,lat2,lon2){
+  var R=6371, dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function findDest(name){
+  if(!name) return null;
+  var k = name.trim().toLowerCase();
+  if(DESTS[k]) return DESTS[k];
+  for(var key in DESTS){ if(k.indexOf(key)!==-1 || key.indexOf(k)!==-1) return DESTS[key]; }
+  return null;
+}
+function capitalize(s){ if(!s) return s; return s.replace(/\b\w/g, function(c){return c.toUpperCase();}); }
+function clamp(n,min,max){ return Math.max(min,Math.min(max,n)); }
+function minutesFromTimeStr(t){ if(!t) return 8*60; var p=t.split(":"); return (+p[0])*60+(+p[1]); }
+function fmtClock(mins){
+  mins = ((mins%1440)+1440)%1440;
+  var h=Math.floor(mins/60), m=mins%60;
+  var ap = h>=12?"PM":"AM";
+  var hh = h%12; if(hh===0) hh=12;
+  return {hm: hh+":"+(m<10?"0"+m:m), ap: ap};
+}
+function addDaysISO(iso, n){
+  var d = new Date(iso+"T00:00:00");
+  d.setDate(d.getDate()+n);
+  return d.toISOString().slice(0,10);
+}
+function diffDaysISO(a,b){
+  var d1=new Date(a+"T00:00:00"), d2=new Date(b+"T00:00:00");
+  return Math.round((d2-d1)/86400000);
+}
+function fmtDateShort(iso){
+  var d = new Date(iso+"T00:00:00");
+  var months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return months[d.getMonth()]+" "+d.getDate();
+}
+function fmtDur(min){
+  if(min<60) return min+"M";
+  var h=Math.floor(min/60), m=min%60;
+  return h+"H"+(m?" "+m+"M":"");
+}
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+/* Age-based max comfortable drive stretch before a break, in minutes */
+function ageBreakLimitMinutes(minAge, maxAge){
+  var limit = 210; // default adults, 3h30
+  if(minAge <= 2) limit = Math.min(limit, 75);
+  else if(minAge <= 5) limit = Math.min(limit, 100);
+  else if(minAge <= 8) limit = Math.min(limit, 130);
+  else if(minAge <= 12) limit = Math.min(limit, 150);
+  else if(minAge <= 17) limit = Math.min(limit, 180);
+  if(maxAge >= 75) limit = Math.min(limit, 120);
+  else if(maxAge >= 65) limit = Math.min(limit, 150);
+  return clamp(limit, 60, 210);
+}
+
+/* ============================================================
+   STORAGE
+============================================================ */
+var STORAGE_KEY = "enroute_trips_v1";
+function loadTrips(){
+  try{
+    var raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return []; }
+}
+function saveTrips(trips){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(trips)); return true; }
+  catch(e){ return false; }
+}
+
+/* ============================================================
+   GOOGLE MAPS INTEGRATION (Places API (New) + Routes API)
+============================================================ */
+var MAPS_KEY_STORAGE = "enroute_google_maps_key";
+function getMapsKey(){
+  try{ return (localStorage.getItem(MAPS_KEY_STORAGE) || "").trim(); }catch(e){ return ""; }
+}
+function setMapsKey(k){
+  try{ localStorage.setItem(MAPS_KEY_STORAGE, (k||"").trim()); return true; }catch(e){ return false; }
+}
+function hasMapsKey(){ return !!getMapsKey(); }
+
+function placesAutocomplete(input, sessionToken){
+  var key = getMapsKey();
+  if(!key || !input || input.trim().length<2) return Promise.resolve([]);
+  return fetch("https://places.googleapis.com/v1/places:autocomplete", {
+    method:"POST",
+    headers:{"Content-Type":"application/json", "X-Goog-Api-Key":key},
+    body: JSON.stringify({input:input, sessionToken:sessionToken})
+  }).then(function(r){ return r.json(); }).then(function(data){
+    return (data.suggestions||[]).map(function(s){
+      var p = s.placePrediction;
+      if(!p || !p.text) return null;
+      return {placeId:p.placeId, text:p.text.text};
+    }).filter(Boolean);
+  }).catch(function(){ return []; });
+}
+
+function placeDetails(placeId, sessionToken){
+  var key = getMapsKey();
+  if(!key || !placeId) return Promise.resolve(null);
+  var url = "https://places.googleapis.com/v1/places/"+encodeURIComponent(placeId)+
+    (sessionToken ? ("?sessionToken="+encodeURIComponent(sessionToken)) : "");
+  return fetch(url, {
+    headers:{"X-Goog-Api-Key":key, "X-Goog-FieldMask":"id,displayName,location,formattedAddress"}
+  }).then(function(r){ return r.json(); }).then(function(data){
+    if(!data || !data.location) return null;
+    return {lat:data.location.latitude, lng:data.location.longitude, formattedAddress:data.formattedAddress||""};
+  }).catch(function(){ return null; });
+}
+
+function geocodeText(text){
+  var key = getMapsKey();
+  if(!key || !text) return Promise.resolve(null);
+  return fetch("https://places.googleapis.com/v1/places:searchText", {
+    method:"POST",
+    headers:{"Content-Type":"application/json", "X-Goog-Api-Key":key, "X-Goog-FieldMask":"places.location,places.displayName"},
+    body: JSON.stringify({textQuery:text, maxResultCount:1})
+  }).then(function(r){ return r.json(); }).then(function(d){
+    var p = d.places && d.places[0];
+    if(!p || !p.location) return null;
+    return {name:(p.displayName && p.displayName.text) || text, lat:p.location.latitude, lon:p.location.longitude, source:"geocoded"};
+  }).catch(function(){ return null; });
+}
+
+function nearbyRestaurants(lat, lon, radiusMeters){
+  var key = getMapsKey();
+  if(!key || typeof lat!=="number" || typeof lon!=="number") return Promise.resolve([]);
+  return fetch("https://places.googleapis.com/v1/places:searchNearby", {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json", "X-Goog-Api-Key":key,
+      "X-Goog-FieldMask":"places.displayName,places.rating,places.userRatingCount,places.formattedAddress"
+    },
+    body: JSON.stringify({
+      includedTypes:["restaurant"],
+      maxResultCount:12,
+      rankPreference:"POPULARITY",
+      locationRestriction:{circle:{center:{latitude:lat, longitude:lon}, radius:radiusMeters||6000}}
+    })
+  }).then(function(r){ return r.json(); }).then(function(d){ return d.places || []; }).catch(function(){ return []; });
+}
+
+function computeRoute(originLat, originLon, destLat, destLon){
+  var key = getMapsKey();
+  if(!key || typeof originLat!=="number" || typeof destLat!=="number") return Promise.resolve(null);
+  return fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json", "X-Goog-Api-Key":key,
+      "X-Goog-FieldMask":"routes.duration,routes.distanceMeters,routes.staticDuration"
+    },
+    body: JSON.stringify({
+      origin:{location:{latLng:{latitude:originLat, longitude:originLon}}},
+      destination:{location:{latLng:{latitude:destLat, longitude:destLon}}},
+      travelMode:"DRIVE",
+      routingPreference:"TRAFFIC_AWARE"
+    })
+  }).then(function(r){ return r.json(); }).then(function(d){
+    var route = d.routes && d.routes[0];
+    if(!route || !route.duration) return null;
+    return {
+      durationSec: parseInt(route.duration,10),
+      distanceMeters: route.distanceMeters
+    };
+  }).catch(function(){ return null; });
+}
+
+/* Resolve a location string (plus any cached Places selection) to coordinates.
+   Priority: a picked autocomplete suggestion > the built-in curated list > a live geocode. */
+function resolvePlaceGeo(text, cachedPlace){
+  if(cachedPlace && typeof cachedPlace.lat==="number" && typeof cachedPlace.lng==="number"){
+    return Promise.resolve({name:cachedPlace.text||text, lat:cachedPlace.lat, lon:cachedPlace.lng, source:"places"});
+  }
+  var staticMatch = findDest(text);
+  if(staticMatch) return Promise.resolve({name:staticMatch.name, lat:staticMatch.lat, lon:staticMatch.lon, source:"static"});
+  if(!text || !text.trim() || !hasMapsKey()) return Promise.resolve(null);
+  return geocodeText(text.trim());
+}
+
+/* Resolve drive distance/duration between two resolved points: live traffic-aware
+   route when a Maps key is configured, otherwise the straight-line estimate. */
+function resolveRouting(originGeo, destGeo){
+  var avgSpeed = 42, roadFactor = 1.32;
+  var fallbackKm = (originGeo && destGeo) ? haversineKm(originGeo.lat,originGeo.lon,destGeo.lat,destGeo.lon)*roadFactor : null;
+  var fallbackMin = fallbackKm ? Math.round(fallbackKm/avgSpeed*60) : 240;
+  var fallback = {km:fallbackKm, min:fallbackMin, source:"estimated"};
+  if(!originGeo || !destGeo || !hasMapsKey()) return Promise.resolve(fallback);
+  return computeRoute(originGeo.lat, originGeo.lon, destGeo.lat, destGeo.lon).then(function(res){
+    if(!res) return fallback;
+    return {km: res.distanceMeters/1000, min: Math.max(1,Math.round(res.durationSec/60)), source:"live"};
+  });
+}
+
+function ratingSubtitle(p){
+  var bits = [];
+  if(p.rating) bits.push(p.rating.toFixed(1)+"★");
+  if(p.userRatingCount) bits.push(p.userRatingCount.toLocaleString()+" reviews");
+  var line = bits.join(" · ") || "Real-time Google rating unavailable";
+  return p.formattedAddress ? (line+" — "+p.formattedAddress) : line;
+}
+
+/* Live nearby restaurants for the destination, ranked by rating weighted by review volume. */
+function resolveNearbyFood(destGeo){
+  if(!destGeo || !hasMapsKey()) return Promise.resolve([]);
+  return nearbyRestaurants(destGeo.lat, destGeo.lon, 6000).then(function(places){
+    return places.filter(function(p){ return p.rating && p.displayName; }).map(function(p){
+      return {
+        title: p.displayName.text,
+        subtitle: ratingSubtitle(p),
+        score: p.rating * Math.log(1+(p.userRatingCount||0))
+      };
+    }).sort(function(a,b){ return b.score-a.score; });
+  });
+}
+function pickRealFood(list, usedTitles){
+  var candidates = (list||[]).filter(function(p){ return usedTitles.indexOf(p.title)===-1; });
+  if(!candidates.length) return null;
+  var pick = candidates[0];
+  usedTitles.push(pick.title);
+  return {title:pick.title, subtitle:pick.subtitle};
+}
+
+/* ============================================================
+   ITINERARY GENERATION
+============================================================ */
+function getTripStats(trip){
+  if(trip.stats) return trip.stats;
+  var totalDriveMin=0, totalKm=0, totalBreaks=0;
+  (trip.days||[]).forEach(function(day){
+    day.items.forEach(function(item){
+      if(typeof item.driveMin==="number") totalDriveMin += item.driveMin;
+      if(typeof item.km==="number") totalKm += item.km;
+      if(item.isBreak) totalBreaks++;
+    });
+  });
+  return {totalDriveMin:totalDriveMin, totalKm:Math.round(totalKm), totalBreaks:totalBreaks, dayCount:(trip.days||[]).length, maxStretchMin:null};
+}
+
+function themeFor(trip){
+  if(trip.interests && trip.interests.length && THEME_MAP[trip.interests[0]]) return THEME_MAP[trip.interests[0]];
+  return DEFAULT_THEME;
+}
+function heroGrad(theme){
+  return "linear-gradient(150deg, "+theme.heroFrom+" 0%, "+theme.heroTo+" 100%)";
+}
+function heroMotif(motif, size){
+  size = size || "large";
+  var op = size==="small" ? 0.55 : 0.85;
+  if(motif==="waves"){
+    return '<svg viewBox="0 0 400 160" preserveAspectRatio="none" style="position:absolute; left:0; right:0; bottom:0; width:100%; height:55%; opacity:'+op+'"><path d="M0 90 Q 50 60 100 90 T 200 90 T 300 90 T 400 90 V160 H0 Z" fill="rgba(255,255,255,0.28)"/><path d="M0 120 Q 50 95 100 120 T 200 120 T 300 120 T 400 120 V160 H0 Z" fill="rgba(255,255,255,0.4)"/></svg>';
+  }
+  if(motif==="hills"){
+    return '<svg viewBox="0 0 400 160" preserveAspectRatio="none" style="position:absolute; left:0; right:0; bottom:0; width:100%; height:60%; opacity:'+op+'"><path d="M0 110 L70 60 L130 95 L190 45 L260 100 L320 65 L400 105 V160 H0 Z" fill="rgba(0,0,0,0.14)"/><path d="M0 135 L90 95 L160 125 L230 85 L300 130 L400 100 V160 H0 Z" fill="rgba(0,0,0,0.20)"/></svg>';
+  }
+  if(motif==="arch"){
+    return '<svg viewBox="0 0 400 160" preserveAspectRatio="none" style="position:absolute; left:0; right:0; bottom:0; width:100%; height:65%; opacity:'+op+'"><rect x="40" y="70" width="55" height="90" rx="27" fill="rgba(255,255,255,0.22)"/><rect x="120" y="40" width="55" height="120" rx="27" fill="rgba(255,255,255,0.3)"/><rect x="200" y="65" width="55" height="95" rx="27" fill="rgba(255,255,255,0.22)"/><rect x="280" y="45" width="55" height="115" rx="27" fill="rgba(255,255,255,0.3)"/></svg>';
+  }
+  // sun / default
+  return '<svg viewBox="0 0 400 160" style="position:absolute; right:8%; top:14%; width:34%; opacity:'+op+'"><circle cx="60" cy="60" r="46" fill="rgba(255,255,255,0.3)"/></svg>';
+}
+
+function pickCurated(destName, usedTitles, tagFilter, categoryHint){
+  var pool = CURATED[destName] || [];
+  var candidates = pool.filter(function(p){ return usedTitles.indexOf(p.title)===-1; });
+  if(tagFilter && tagFilter.length){
+    var tagged = candidates.filter(function(p){
+      return p.tags.some(function(t){ return tagFilter.indexOf(t)!==-1; });
+    });
+    if(tagged.length) candidates = tagged;
+  }
+  if(categoryHint){
+    var byCat = candidates.filter(function(p){ return p.category===categoryHint; });
+    if(byCat.length) candidates = byCat;
+  }
+  if(!candidates.length) return null;
+  var pick = candidates[0];
+  usedTitles.push(pick.title);
+  return pick;
+}
+
+function genericStop(destName, interests, kind){
+  var tag = interests && interests[0] ? INTEREST_LABELS[interests[0]] : "local";
+  if(kind==="food") return {title:"Local eatery near "+destName, subtitle:"Ask your stay for a nearby recommendation."};
+  if(kind==="breakfast") return {title:"Breakfast at the stay", subtitle:"Or a nearby local spot recommended by your host."};
+  return {title:tag+" spot near "+destName, subtitle:"A short detour worth the stop — check recent reviews before you go."};
+}
+
+function buildDriveSegment(items, curMinRef, remainingMin, maxStretch, destLabel, kmTotal){
+  var totalMin = remainingMin;
+  var covered = 0;
+  var breaks = 0;
+  while(remainingMin > maxStretch){
+    var chunk = maxStretch;
+    curMinRef.v += chunk;
+    covered += chunk;
+    var kmMark = kmTotal ? Math.round(kmTotal * (covered/totalMin)) : null;
+    items.push({
+      time:curMinRef.v, category:"DRIVE · "+fmtDur(chunk),
+      title:"On the road toward "+destLabel,
+      subtitle: kmMark ? "Break suggested near the "+kmMark+" km mark." : "Break suggested around here.",
+      driveMin: chunk
+    });
+    items.push({
+      time:curMinRef.v, category:"BREAK",
+      title:"Stretch break & snacks",
+      subtitle:"Quick stop — stretch, hydrate, use the washroom.",
+      isBreak:true
+    });
+    breaks++;
+    curMinRef.v += 20;
+    remainingMin -= chunk;
+  }
+  curMinRef.v += remainingMin;
+  items.push({
+    time:curMinRef.v, category:"DRIVE · "+fmtDur(remainingMin),
+    title:"Arrive in "+destLabel,
+    subtitle: kmTotal ? Math.round(kmTotal)+" km covered on this leg." : "Estimated leg — add a recognised city name for a precise distance.",
+    driveMin: remainingMin,
+    km: kmTotal || null
+  });
+  return breaks;
+}
+
+function generateItinerary(trip){
+  var dayCount = Math.max(1, diffDaysISO(trip.startDate, trip.endDate)+1);
+  var destLabel = capitalize(trip.destination) || "your destination";
+  var ages = trip.ages && trip.ages.length ? trip.ages : [30];
+  var minAge = Math.min.apply(null,ages), maxAge = Math.max.apply(null,ages);
+  var maxStretch = ageBreakLimitMinutes(minAge, maxAge);
+
+  return Promise.all([
+    resolvePlaceGeo(trip.destination, trip.destinationPlace),
+    resolvePlaceGeo(trip.departureLocation, trip.departurePlace),
+    resolvePlaceGeo(trip.returnLocation, trip.returnPlace)
+  ]).then(function(geos){
+    var destGeo = geos[0], originGeo = geos[1], returnGeoRaw = geos[2];
+    var destKey = destGeo ? destGeo.name : null;
+
+    return Promise.all([
+      resolveRouting(originGeo, destGeo),
+      resolveNearbyFood(destGeo)
+    ]).then(function(res){
+      var outboundRouting = res[0], realFood = res[1];
+      var sameReturn = !returnGeoRaw;
+      var returnGeo = returnGeoRaw || originGeo;
+
+      var backRoutingPromise = sameReturn ? Promise.resolve(outboundRouting) : resolveRouting(destGeo, returnGeo);
+      return backRoutingPromise.then(function(backRouting){
+        var outboundKm = outboundRouting.km, outboundMin = outboundRouting.min;
+        var backKm = backRouting.km, backMin = backRouting.min;
+        var routingSource = (outboundRouting.source==="live" || backRouting.source==="live") ? "live" : "estimated";
+        var usedTitles = [];
+        var days = [];
+
+        for(var d=0; d<dayCount; d++){
+          var dateISO = addDaysISO(trip.startDate, d);
+          var items = [];
+          var isFirst = d===0, isLast = d===dayCount-1 && dayCount>1;
+
+          if(isFirst){
+            var cur = {v: minutesFromTimeStr(trip.departureTime)};
+            items.push({
+              time:cur.v, category:"DEPART",
+              title:"Leave from "+(trip.departureLocation || "home"),
+              subtitle: trip.goals ? "Keep in mind: "+trip.goals : "Keep snacks and water within reach for the road."
+            });
+            if(dayCount===1){
+              // same-day trip: drive there, activity, drive back
+              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm);
+              var act = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING") ;
+              cur.v += 60;
+              if(act) items.push({time:cur.v, category:act.category, title:act.title, subtitle:act.subtitle});
+              else { var g=genericStop(destLabel, trip.interests,"sight"); items.push({time:cur.v, category:"SIGHTSEEING", title:g.title, subtitle:g.subtitle}); }
+              cur.v += 150;
+              var returnKm = outboundKm;
+              buildDriveSegment(items, cur, outboundMin, maxStretch, (trip.returnLocation||trip.departureLocation||"home"), returnKm);
+            } else {
+              buildDriveSegment(items, cur, outboundMin, maxStretch, destLabel, outboundKm);
+              cur.v += 60;
+              var act1 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING");
+              if(act1) items.push({time:cur.v, category:act1.category, title:act1.title, subtitle:act1.subtitle});
+              else { var g1=genericStop(destLabel, trip.interests,"sight"); items.push({time:cur.v, category:"SIGHTSEEING", title:g1.title, subtitle:g1.subtitle}); }
+              var stayTime = Math.max(cur.v+150, 19*60);
+              items.push({time:stayTime, category:"STAY", title:"Check in, "+(STAY_LABELS[trip.stayType]||"stay").toLowerCase(), subtitle: trip.stayNotes || "Settle in and rest up for tomorrow."});
+            }
+          } else if(isLast){
+            var cur2 = {v: 9*60};
+            var bf = pickRealFood(realFood, usedTitles) || pickCurated(destKey, usedTitles, trip.interests, "BREAKFAST");
+            if(bf) items.push({time:cur2.v, category:"BREAKFAST", title:bf.title, subtitle:bf.subtitle});
+            else { var gb=genericStop(destLabel, trip.interests,"breakfast"); items.push({time:cur2.v, category:"BREAKFAST", title:gb.title, subtitle:gb.subtitle}); }
+            items.push({time:cur2.v+60, category:"CHECKOUT", title:"Check out", subtitle:"Settle up and pack the car."});
+            cur2.v += 90;
+            buildDriveSegment(items, cur2, backMin, maxStretch, trip.returnLocation || trip.departureLocation || "home", backKm);
+            items.push({
+              time:cur2.v, category:"ARRIVE",
+              title:"Back at "+(trip.returnLocation || trip.departureLocation || "home"),
+              subtitle:"Target return time was "+fmtClock(minutesFromTimeStr(trip.returnTime)).hm+" "+fmtClock(minutesFromTimeStr(trip.returnTime)).ap+"."
+            });
+          } else {
+            var cur3 = {v: 8*60+30};
+            var bf2 = pickRealFood(realFood, usedTitles) || pickCurated(destKey, usedTitles, trip.interests, "BREAKFAST");
+            if(bf2) items.push({time:cur3.v, category:"BREAKFAST", title:bf2.title, subtitle:bf2.subtitle});
+            else { var gb2=genericStop(destLabel, trip.interests,"breakfast"); items.push({time:cur3.v, category:"BREAKFAST", title:gb2.title, subtitle:gb2.subtitle}); }
+            cur3.v += 90;
+            var s1 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING") || pickCurated(destKey, usedTitles, trip.interests, "WILDLIFE");
+            if(s1) items.push({time:cur3.v, category:s1.category, title:s1.title, subtitle:s1.subtitle});
+            else { var g2=genericStop(destLabel, trip.interests,"sight"); items.push({time:cur3.v, category:"SIGHTSEEING", title:g2.title, subtitle:g2.subtitle}); }
+            cur3.v += 180;
+            var f1 = pickRealFood(realFood, usedTitles) || pickCurated(destKey, usedTitles, trip.interests, "FOOD");
+            if(f1) items.push({time:cur3.v, category:"FOOD", title:f1.title, subtitle:f1.subtitle});
+            else { var gf=genericStop(destLabel, trip.interests,"food"); items.push({time:cur3.v, category:"FOOD", title:gf.title, subtitle:gf.subtitle}); }
+            cur3.v += 240;
+            var s2 = pickCurated(destKey, usedTitles, trip.interests, "SIGHTSEEING");
+            if(s2) items.push({time:cur3.v, category:s2.category, title:s2.title, subtitle:s2.subtitle});
+            items.push({time:19*60+30, category:"STAY", title:"Evening back at the stay", subtitle:"Dinner and downtime."});
+          }
+
+          items.sort(function(a,b){ return a.time-b.time; });
+          days.push({label:"Day "+(d+1), date:dateISO, items:items});
+        }
+
+        var totalDriveMin = 0, totalKm = 0, totalBreaks = 0;
+        days.forEach(function(day){
+          day.items.forEach(function(item){
+            if(typeof item.driveMin==="number") totalDriveMin += item.driveMin;
+            if(typeof item.km==="number") totalKm += item.km;
+            if(item.isBreak) totalBreaks++;
+          });
+        });
+        var stats = {
+          totalDriveMin: totalDriveMin,
+          totalKm: Math.round(totalKm),
+          totalBreaks: totalBreaks,
+          dayCount: dayCount,
+          maxStretchMin: maxStretch
+        };
+        return {days: days, stats: stats, routingSource: routingSource};
+      });
+    });
+  });
+}
+
+/* ============================================================
+   STATE
+============================================================ */
+var state = {
+  screen: "home",       // home | wizard | timeline | trips | explore | profile
+  trips: loadTrips(),
+  currentTripId: null,
+  activeDay: 0,
+  moreMenuOpen: false,
+  wizard: null,
+  exploreQuery: "",
+  exploreFilter: "all"
+};
+
+var STEPS = ["basics","window","intention","travelers","goals","food","stay","interests","review"];
+var PLACE_FIELD_MAP = {destination:"destinationPlace", departureLocation:"departurePlace", returnLocation:"returnPlace"};
+
+function newWizard(prefillDest){
+  return {
+    step:0,
+    data:{
+      destination: prefillDest || "", destinationPlace:null,
+      startDate:"", endDate:"",
+      departureLocation:"", departurePlace:null, departureTime:"08:00",
+      returnLocation:"", returnPlace:null, returnTime:"20:00",
+      intention:"leisure",
+      travelers:2, ages:[30,30],
+      goals:"",
+      foodPrefs:[], foodAllergies:"",
+      stayType:"midrange", stayNotes:"",
+      interests:[]
+    }
+  };
+}
+
+/* ============================================================
+   RENDER: NAVBAR
+============================================================ */
+function iconHome(){return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9h12v-9"/></svg>';}
+function iconExplore(){return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M15 9l-2 6-6 2 2-6 6-2z"/></svg>';}
+function iconTrips(){return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>';}
+function iconProfile(){return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c1-3.5 4-5.2 7-5.2s6 1.7 7 5.2"/></svg>';}
+
+function categoryIcon(cat){
+  var c = (cat||"").toUpperCase();
+  var s = 'width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"';
+  if(c.indexOf("DRIVE")===0) return '<svg '+s+'><path d="M3 13l2-6h14l2 6"/><rect x="3" y="13" width="18" height="6" rx="2"/><circle cx="7.5" cy="19" r="1.3" fill="currentColor"/><circle cx="16.5" cy="19" r="1.3" fill="currentColor"/></svg>';
+  if(c==="BREAK") return '<svg '+s+'><path d="M6 3v6a6 6 0 0012 0V3"/><path d="M6 21h12"/></svg>';
+  if(c==="BREAKFAST") return '<svg '+s+'><path d="M4 3v10a5 5 0 0010 0V3"/><path d="M14 8h3a3 3 0 010 6h-3"/><path d="M4 21h12"/></svg>';
+  if(c==="FOOD") return '<svg '+s+'><path d="M6 3v8M9 3v8M6 7h3M7.5 11v10"/><path d="M17 3s-3 2-3 6 3 6 3 6"/><path d="M17 3v18"/></svg>';
+  if(c==="SIGHTSEEING") return '<svg '+s+'><circle cx="12" cy="12" r="9"/><path d="M15 9l-2 6-6 2 2-6 6-2z"/></svg>';
+  if(c==="WILDLIFE") return '<svg '+s+'><path d="M12 14c-3 0-6 2-6 5h12c0-3-3-5-6-5z"/><circle cx="7" cy="8" r="2"/><circle cx="17" cy="8" r="2"/><circle cx="12" cy="6" r="2"/></svg>';
+  if(c==="STAY") return '<svg '+s+'><path d="M3 18v-7a2 2 0 012-2h14a2 2 0 012 2v7"/><path d="M3 18h18M5 9V6h4v3"/></svg>';
+  if(c==="DEPART" || c==="ARRIVE") return '<svg '+s+'><path d="M5 3v18"/><path d="M5 4h11l-3 4 3 4H5"/></svg>';
+  if(c==="CHECKOUT") return '<svg '+s+'><path d="M9 3H5v18h4"/><path d="M12 8l5 4-5 4"/><path d="M9 12h8"/></svg>';
+  return '<svg '+s+'><circle cx="12" cy="12" r="3"/></svg>';
+}
+
+function renderGenerating(){
+  return '<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:80vh; text-align:center; padding:0 40px;">'+
+    '<div style="width:40px; height:40px; border:3px solid var(--line); border-top-color:var(--coral); border-radius:50%; animation:spin 0.8s linear infinite;"></div>'+
+    '<p style="margin-top:22px; color:var(--ink-soft); font-size:15px; line-height:1.5;">'+
+    (hasMapsKey() ? "Pulling live traffic times and nearby ratings from Google Maps…" : "Building your itinerary…")+
+    '</p></div>';
+}
+
+function renderNavbar(){
+  if(state.screen==="wizard" || state.screen==="summary" || state.screen==="generating"){ return ""; }
+  var tabs = [
+    {id:"home", label:"Home", icon:iconHome},
+    {id:"explore", label:"Explore", icon:iconExplore},
+    {id:"trips", label:"Trips", icon:iconTrips},
+    {id:"profile", label:"Profile", icon:iconProfile}
+  ];
+  var active = state.screen;
+  if(active==="timeline") active="trips";
+  var html = "";
+  tabs.forEach(function(t){
+    html += '<button class="nav-item '+(active===t.id?"active":"")+'" data-action="nav" data-target="'+t.id+'">'+t.icon()+'<span>'+t.label+'</span></button>';
+  });
+  return html;
+}
+
+/* ============================================================
+   RENDER: HOME
+============================================================ */
+function renderHome(){
+  var upcoming = state.trips.slice().sort(function(a,b){ return a.startDate.localeCompare(b.startDate); })[0];
+  var rest = state.trips.filter(function(t){ return !upcoming || t.id!==upcoming.id; }).slice(0,4);
+  var html = '';
+  html += '<div class="topbar">';
+  html += '<div><p class="home-greeting">Good '+timeOfDayGreeting()+'</p><h1 class="home-title">EnRoute</h1></div>';
+  html += '<div class="avatar" data-action="nav" data-target="profile">'+iconProfile()+'</div>';
+  html += '</div>';
+  html += '<div class="px">';
+  html += '<button class="plan-btn" data-action="start-wizard"><span style="font-size:19px;">+</span> Plan a new trip</button>';
+
+  html += '<div class="section-head"><h3>Upcoming</h3></div>';
+  if(upcoming){
+    var theme = themeFor(upcoming);
+    var daysAway = diffDaysISO(new Date().toISOString().slice(0,10), upcoming.startDate);
+    var badge = daysAway>1 ? "In "+daysAway+" days" : (daysAway===1?"Tomorrow":(daysAway===0?"Today":"Started"));
+    html += '<div class="upcoming-card" data-action="open-trip" data-id="'+upcoming.id+'">';
+    html += '<div class="hero-ph" style="background:'+heroGrad(theme)+'">'+heroMotif(theme.motif)+'</div>';
+    html += '<div class="upcoming-body"><div class="upcoming-row"><div><p class="upcoming-title">'+esc(upcoming.title)+'</p><p class="upcoming-sub">'+fmtDateShort(upcoming.startDate)+' – '+fmtDateShort(upcoming.endDate)+' · '+upcoming.days.length+' day'+(upcoming.days.length>1?"s":"")+'</p></div><span class="badge">'+badge+'</span></div></div>';
+    html += '</div>';
+  } else {
+    html += '<p class="empty-note">No trips planned yet. Tap "Plan a new trip" to build your first day-by-day itinerary.</p>';
+  }
+
+  html += '<div class="section-head"><h3>Saved trips</h3>'+(rest.length?'<button class="link-accent" data-action="nav" data-target="trips">See all</button>':'')+'</div>';
+  if(rest.length){
+    rest.forEach(function(t){
+      html += tripRowHTML(t);
+    });
+  } else {
+    html += '<p class="empty-note">Trips you save will show up here.</p>';
+  }
+  html += '</div>';
+  return html;
+}
+function timeOfDayGreeting(){
+  var h = new Date().getHours();
+  if(h<12) return "morning"; if(h<17) return "afternoon"; return "evening";
+}
+function imgPlaceholderIcon(){
+  return '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(0,0,0,0.32)" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5.5-5-4 4L8 12l-5 5"/></svg>';
+}
+function tripRowHTML(t){
+  var theme = themeFor(t);
+  return '<div class="trip-row" data-action="open-trip" data-id="'+t.id+'">'+
+    '<div class="trip-thumb" style="background:'+heroGrad(theme)+'"></div>'+
+    '<div><p class="trip-row-title">'+esc(t.title)+'</p><p class="trip-row-sub">'+fmtDateShort(t.startDate)+' – '+fmtDateShort(t.endDate)+'</p></div>'+
+    '<span class="chevron"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>'+
+    '</div>';
+}
+function imgPlaceholderIconSmall(){
+  return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5.5-5-4 4L8 12l-5 5"/></svg>';
+}
+function esc(s){ var d=document.createElement("div"); d.textContent = s==null?"":s; return d.innerHTML.replace(/"/g,"&quot;"); }
+
+/* ============================================================
+   RENDER: TRIPS LIST / EXPLORE / PROFILE
+============================================================ */
+function renderTripsList(){
+  var html = '<h1 class="page-title">Your trips</h1><div class="px">';
+  if(!state.trips.length){
+    html += '<p class="empty-note">No trips yet. Head to Home and tap "Plan a new trip".</p>';
+  } else {
+    state.trips.slice().sort(function(a,b){return a.startDate.localeCompare(b.startDate);}).forEach(function(t){
+      html += tripRowHTML(t);
+    });
+  }
+  html += '</div>';
+  return html;
+}
+
+var FEATURED = ["Goa","Munnar","Coorg","Wayanad","Alleppey","Ooty","Hampi"];
+function destDominantTag(name){
+  var pool = CURATED[name];
+  if(!pool) return "nature";
+  var counts = {};
+  pool.forEach(function(p){ p.tags.forEach(function(t){ counts[t]=(counts[t]||0)+1; }); });
+  var best=null, bestC=0;
+  Object.keys(counts).forEach(function(k){ if(counts[k]>bestC){ best=k; bestC=counts[k]; } });
+  return best || "nature";
+}
+function filteredFeatured(){
+  var q = (state.exploreQuery||"").trim().toLowerCase();
+  var f = state.exploreFilter||"all";
+  return FEATURED.filter(function(name){
+    var tag = destDominantTag(name);
+    var matchesFilter = f==="all" || tag===f;
+    var matchesQuery = !q || name.toLowerCase().indexOf(q)!==-1;
+    return matchesFilter && matchesQuery;
+  });
+}
+function renderExploreGridItems(){
+  var list = filteredFeatured();
+  if(!list.length) return '<p class="empty-note">No destinations match that search yet.</p>';
+  var html = '<div class="explore-grid">';
+  list.forEach(function(name){
+    var tag = destDominantTag(name);
+    var theme = THEME_MAP[tag] || DEFAULT_THEME;
+    var sample = CURATED[name] ? CURATED[name][0] : null;
+    html += '<div class="explore-card" data-action="explore-dest" data-name="'+name+'">'+
+      '<div class="explore-card-hero" style="background:'+heroGrad(theme)+'">'+heroMotif(theme.motif,"small")+'</div>'+
+      '<div class="explore-card-body">'+
+        '<p class="explore-name">'+name+'</p>'+
+        '<p class="explore-sub">'+(sample?sample.title:"A great spot for a road trip")+'</p>'+
+        '<span class="explore-tag">'+INTEREST_LABELS[tag]+'</span>'+
+      '</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+function renderExplore(){
+  var html = '<h1 class="page-title">Explore</h1><div class="px">';
+  html += '<div class="search-bar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>'+
+    '<input type="text" placeholder="Search destinations…" data-field="exploreQuery" value="'+esc(state.exploreQuery||"")+'"></div>';
+  html += '<div class="filter-row">';
+  var filters = [["all","All"]].concat(Object.keys(INTEREST_LABELS).map(function(k){return [k,INTEREST_LABELS[k]];}));
+  filters.forEach(function(f){
+    html += '<button class="filter-chip '+((state.exploreFilter||"all")===f[0]?"active":"")+'" data-action="explore-filter" data-value="'+f[0]+'">'+f[1]+'</button>';
+  });
+  html += '</div>';
+  html += '<div id="explore-grid">'+renderExploreGridItems()+'</div>';
+  html += '</div>';
+  return html;
+}
+
+function renderProfile(){
+  var tripCount = state.trips.length;
+  var destSet = {};
+  var dayTotal = 0;
+  state.trips.forEach(function(t){
+    destSet[(t.destination||"").trim().toLowerCase()] = true;
+    dayTotal += t.days ? t.days.length : 0;
+  });
+  var destCount = Object.keys(destSet).filter(function(k){return k;}).length;
+
+  var html = '<h1 class="page-title">Profile</h1><div class="px">';
+  html += '<div class="stat-row">';
+  html += '<div class="stat-card"><span class="stat-num">'+tripCount+'</span><span class="stat-label">Trips planned</span></div>';
+  html += '<div class="stat-card"><span class="stat-num">'+destCount+'</span><span class="stat-label">Destinations</span></div>';
+  html += '<div class="stat-card"><span class="stat-num">'+dayTotal+'</span><span class="stat-label">Days planned</span></div>';
+  html += '</div>';
+  html += '<div class="review-block">';
+  html += '<div class="profile-row"><span>Storage</span><span style="color:var(--gray); font-size:13.5px;">This browser only</span></div>';
+  html += '</div>';
+  html += '<div class="review-block">';
+  html += '<p class="review-label" style="margin-bottom:10px;">Google Maps integration</p>';
+  html += '<div class="field" style="margin-bottom:10px;"><label>API key</label><input type="password" id="maps-key-input" placeholder="Paste your Google Maps API key" value="'+esc(getMapsKey())+'"></div>';
+  html += '<button class="btn-secondary" data-action="save-maps-key" style="width:100%;">'+(hasMapsKey()?"Update key":"Save key")+'</button>';
+  html += '<p style="font-size:12.5px; color:var(--gray); margin:12px 0 0; line-height:1.5;">'+
+    (hasMapsKey()
+      ? "Connected — real place search, live traffic-aware drive times and nearby restaurant ratings are active."
+      : "Not set — trips will use the built-in place list and straight-line time estimates instead.")+
+    '</p>';
+  html += '<p style="font-size:12px; color:var(--gray); margin:8px 0 0; line-height:1.5;">Needs <b>Places API (New)</b> and <b>Routes API</b> enabled with billing on in your Google Cloud project. Keys are stored only in this browser and sent directly to Google — restrict the key by HTTP referrer once you\'re done testing.</p>';
+  html += '</div>';
+  html += '<p class="wizard-sub">Trips are saved locally in this browser. Clearing site data or switching devices will not carry them over.</p>';
+  if(state.trips.length){
+    html += '<button class="btn-danger-outline" data-action="clear-all">Clear all saved trips</button>';
+  }
+  html += '</div>';
+  return html;
+}
+
+/* ============================================================
+   RENDER: WIZARD
+============================================================ */
+function renderWizard(){
+  var w = state.wizard, d = w.data, step = STEPS[w.step];
+  var pct = Math.round(((w.step+1)/STEPS.length)*100);
+  var html = '<div class="wizard-head">';
+  html += '<button class="icon-btn" data-action="wizard-back-top"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>';
+  html += '<div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div>';
+  html += '<span class="step-count">'+(w.step+1)+'/'+STEPS.length+'</span>';
+  html += '</div>';
+  html += '<div class="wizard-body">';
+
+  if(step==="basics"){
+    html += '<h2 class="wizard-title">Where are you headed?</h2><p class="wizard-sub">Give your trip a destination and dates.</p>';
+    html += fieldPlaceAutocomplete("Destination","destination", d.destination, "e.g. Munnar, Goa, Coorg");
+    html += '<div class="row-2">'+fieldDate("Start date","startDate", d.startDate)+fieldDate("End date","endDate", d.endDate)+'</div>';
+  }
+  else if(step==="window"){
+    html += '<h2 class="wizard-title">Departure & return</h2><p class="wizard-sub">Where the trip starts from, and roughly when.</p>';
+    html += fieldPlaceAutocomplete("Home departure location","departureLocation", d.departureLocation, "e.g. Bangalore");
+    html += fieldTime("Departure time","departureTime", d.departureTime);
+    html += fieldPlaceAutocomplete("Return location","returnLocation", d.returnLocation, "Leave blank if same as departure");
+    html += fieldTime("Target return time","returnTime", d.returnTime);
+  }
+  else if(step==="intention"){
+    html += '<h2 class="wizard-title">What is this trip for?</h2><p class="wizard-sub">Pick what best describes the trip intent.</p>';
+    html += chipGroup("intention", d.intention, INTENTION_LABELS, false);
+  }
+  else if(step==="travelers"){
+    html += '<h2 class="wizard-title">Who is travelling?</h2><p class="wizard-sub">Ages help set a comfortable driving pace.</p>';
+    html += '<div class="field"><label>Number of travelers</label><div class="stepper-row">';
+    html += '<button class="stepper-btn" data-action="travelers-dec">−</button><span style="font-size:18px; font-weight:700; width:24px; text-align:center;">'+d.travelers+'</span><button class="stepper-btn" data-action="travelers-inc">+</button>';
+    html += '</div></div>';
+    html += '<div class="field"><label>Ages</label>';
+    for(var i=0;i<d.travelers;i++){
+      html += '<div class="traveler-row"><span>Traveler '+(i+1)+'</span><input type="number" min="0" max="110" data-field="age" data-idx="'+i+'" value="'+(d.ages[i]!=null?d.ages[i]:"")+'"></div>';
+    }
+    html += '</div>';
+  }
+  else if(step==="goals"){
+    html += '<h2 class="wizard-title">Anything not to miss?</h2><p class="wizard-sub">Important goals for the trip — a place, an activity, a feeling.</p>';
+    html += fieldTextarea("Trip goals","goals", d.goals, "e.g. relax on the beach, try local seafood, get some good photos");
+  }
+  else if(step==="food"){
+    html += '<h2 class="wizard-title">Food preferences</h2><p class="wizard-sub">Pick as many as apply.</p>';
+    html += chipGroup("foodPrefs", d.foodPrefs, FOOD_LABELS, true);
+    html += fieldText("Allergies or things to avoid","foodAllergies", d.foodAllergies, "Optional");
+  }
+  else if(step==="stay"){
+    html += '<h2 class="wizard-title">Where will you stay?</h2><p class="wizard-sub">Pick a rough category — you can always change bookings later.</p>';
+    html += chipGroup("stayType", d.stayType, STAY_LABELS, false);
+    html += fieldText("Anything specific about your stay","stayNotes", d.stayNotes, "e.g. need a pool, pet-friendly");
+  }
+  else if(step==="interests"){
+    html += '<h2 class="wizard-title">What draws you in?</h2><p class="wizard-sub">Pick your interests in order of priority — the first one sets the color theme for this trip.</p>';
+    html += chipGroupOrdered("interests", d.interests, INTEREST_LABELS);
+  }
+  else if(step==="review"){
+    html += '<h2 class="wizard-title">Review your trip</h2><p class="wizard-sub">Everything below will be used to build your itinerary.</p>';
+    html += reviewBlock("Destination", capitalize(d.destination)||"—");
+    html += reviewBlock("Dates", (d.startDate&&d.endDate)?(fmtDateShort(d.startDate)+" – "+fmtDateShort(d.endDate)):"—");
+    html += reviewBlock("Route", (d.departureLocation||"—")+" → "+(capitalize(d.destination)||"—")+" → "+(d.returnLocation||d.departureLocation||"—"));
+    html += reviewBlock("Intention", INTENTION_LABELS[d.intention]);
+    html += reviewBlock("Travelers", d.travelers+" ("+d.ages.join(", ")+" yrs)");
+    html += reviewBlock("Goals", d.goals || "—");
+    html += reviewBlock("Food", (d.foodPrefs.map(function(k){return FOOD_LABELS[k];}).join(", ")||"—")+(d.foodAllergies?(" · avoid: "+d.foodAllergies):""));
+    html += reviewBlock("Stay", STAY_LABELS[d.stayType]+(d.stayNotes?(" · "+d.stayNotes):""));
+    html += reviewBlock("Interests", d.interests.map(function(k){return INTEREST_LABELS[k];}).join(", ")||"—");
+    if(!d.destination || !d.startDate || !d.endDate){
+      html += '<div class="info-note">Add at least a destination and dates before generating the itinerary.</div>';
+    }
+  }
+
+  html += '</div>';
+  html += '<div class="wizard-nav">';
+  if(w.step>0) html += '<button class="btn-secondary" data-action="wizard-prev">Back</button>';
+  if(step==="review"){
+    html += '<button class="btn-primary" data-action="wizard-generate">Generate itinerary</button>';
+  } else {
+    html += '<button class="btn-primary" data-action="wizard-next">Continue</button>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function fieldText(label, field, value, placeholder){
+  return '<div class="field"><label>'+label+'</label><input type="text" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||"")+'"></div>';
+}
+function fieldPlaceAutocomplete(label, field, value, placeholder){
+  var html = '<div class="field ac-field"><label>'+label+'</label>'+
+    '<input type="text" data-field="'+field+'" data-ac="1" autocomplete="off" value="'+esc(value)+'" placeholder="'+esc(placeholder||"")+'">'+
+    '<div class="ac-list" id="ac-list-'+field+'"></div>';
+  if(!hasMapsKey()) html += '<p style="font-size:12px; color:var(--gray); margin:7px 2px 0;">Add a Google Maps API key in Profile to search real places.</p>';
+  html += '</div>';
+  return html;
+}
+function fieldTextarea(label, field, value, placeholder){
+  return '<div class="field"><label>'+label+'</label><textarea data-field="'+field+'" placeholder="'+esc(placeholder||"")+'">'+esc(value)+'</textarea></div>';
+}
+function fieldDate(label, field, value){
+  return '<div class="field"><label>'+label+'</label><input type="date" data-field="'+field+'" value="'+esc(value)+'"></div>';
+}
+function fieldTime(label, field, value){
+  return '<div class="field"><label>'+label+'</label><input type="time" data-field="'+field+'" value="'+esc(value)+'"></div>';
+}
+function chipGroup(field, current, labels, multi){
+  var html = '<div class="field"><div class="chip-wrap">';
+  Object.keys(labels).forEach(function(k){
+    var selected = multi ? current.indexOf(k)!==-1 : current===k;
+    html += '<button class="chip '+(selected?"selected":"")+'" data-action="chip" data-field="'+field+'" data-value="'+k+'" data-multi="'+(multi?"1":"0")+'">'+labels[k]+'</button>';
+  });
+  html += '</div></div>';
+  return html;
+}
+function chipGroupOrdered(field, current, labels){
+  var html = '<div class="field"><div class="chip-wrap">';
+  Object.keys(labels).forEach(function(k){
+    var idx = current.indexOf(k);
+    var selected = idx!==-1;
+    html += '<button class="chip '+(selected?"selected":"")+'" data-action="chip" data-field="'+field+'" data-value="'+k+'" data-multi="1">'+(selected?'<span class="order-badge">'+(idx+1)+'</span>':'')+labels[k]+'</button>';
+  });
+  html += '</div></div>';
+  return html;
+}
+function reviewBlock(label, value){
+  return '<div class="review-block"><p class="review-label">'+label+'</p><p class="review-value">'+esc(value)+'</p></div>';
+}
+
+/* ============================================================
+   RENDER: TIMELINE
+============================================================ */
+function renderTimeline(){
+  var trip = state.trips.find(function(t){ return t.id===state.currentTripId; });
+  if(!trip){ state.screen="home"; return renderHome(); }
+  var theme = themeFor(trip);
+  var day = trip.days[state.activeDay] || trip.days[0];
+  var html = '';
+  html += '<div class="tl-hero" style="background:'+heroGrad(theme)+'">';
+  html += heroMotif(theme.motif);
+  html += '<button class="icon-btn" data-action="nav" data-target="trips" style="background:rgba(255,255,255,0.85); border:none; position:relative; z-index:2;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>';
+  html += '<button class="icon-btn" data-action="toggle-more" style="background:rgba(255,255,255,0.85); border:none; position:relative; z-index:2;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/></svg></button>';
+  html += '</div>';
+  if(state.moreMenuOpen){
+    html += '<div class="more-menu">';
+    html += '<button data-action="export-pdf">Export as PDF</button>';
+    html += '<button class="danger" data-action="delete-trip" data-id="'+trip.id+'">Delete trip</button>';
+    html += '</div>';
+  }
+  html += '<div class="tl-body" style="--accent:'+theme.accent+'; --accent-bg:'+theme.accentBg+';">';
+  html += '<p class="tl-title">'+esc(trip.title)+'</p>';
+  html += '<p class="tl-dates">'+fmtDateShort(trip.startDate)+' – '+fmtDateShort(trip.endDate)+' · '+trip.days.length+' day'+(trip.days.length>1?"s":"")+'</p>';
+  html += '<div class="day-tabs">';
+  trip.days.forEach(function(dd,i){
+    html += '<button class="day-tab '+(i===state.activeDay?"active":"")+'" data-action="set-day" data-idx="'+i+'">'+dd.label+'</button>';
+  });
+  html += '</div>';
+  day.items.forEach(function(item, i){
+    var t = fmtClock(item.time);
+    html += '<div class="tl-item">';
+    html += '<div class="tl-time"><span class="hm">'+t.hm+'</span><span class="ap">'+t.ap+'</span></div>';
+    html += '<div class="tl-marker"><div class="tl-dot"></div>'+(i<day.items.length-1?'<div class="tl-line"></div>':'')+'</div>';
+    html += '<div class="tl-content"><p class="tl-cat">'+categoryIcon(item.category)+'<span>'+esc(item.category)+'</span></p><p class="tl-item-title">'+esc(item.title)+'</p><p class="tl-item-sub">'+esc(item.subtitle)+'</p></div>';
+    html += '</div>';
+  });
+  html += '<div class="tl-actions">';
+  html += '<button class="tl-action-btn" data-action="nav" data-target="summary">Trip summary</button>';
+  html += '<button class="tl-action-btn" data-action="print-itinerary">Print</button>';
+  html += '</div>';
+  html += '<div class="tl-actions">';
+  html += '<button class="tl-action-btn" data-action="export-pdf">Export PDF</button>';
+  html += '<button class="tl-action-btn primary" data-action="nav" data-target="home">Back to home</button>';
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+function renderSummary(){
+  var trip = state.trips.find(function(t){ return t.id===state.currentTripId; });
+  if(!trip){ state.screen="home"; return renderHome(); }
+  var theme = themeFor(trip);
+  var stats = getTripStats(trip);
+  var html = '';
+  html += '<div class="wizard-head">';
+  html += '<button class="icon-btn" data-action="nav" data-target="timeline"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>';
+  html += '<span style="font-weight:700; font-size:15px;">Trip summary</span>';
+  html += '</div>';
+  html += '<div class="summary-hero px" style="--accent:'+theme.accent+'; --accent-bg:'+theme.accentBg+';">';
+  html += '<p class="wizard-title" style="margin-bottom:2px;">'+esc(trip.title)+'</p>';
+  html += '<p class="wizard-sub" style="margin-bottom:20px;">'+fmtDateShort(trip.startDate)+' – '+fmtDateShort(trip.endDate)+' · '+stats.dayCount+' day'+(stats.dayCount>1?"s":"")+'</p>';
+
+  html += '<div class="route-strip">';
+  html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(trip.departureLocation||"Home")+'</span></div>';
+  html += '<div class="route-line"></div>';
+  html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(capitalize(trip.destination))+'</span></div>';
+  html += '<div class="route-line"></div>';
+  html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(trip.returnLocation||trip.departureLocation||"Home")+'</span></div>';
+  html += '</div>';
+
+  var isLive = trip.routingSource==="live";
+  html += '<div class="summary-stat-grid">';
+  html += '<div class="stat-card"><span class="stat-num" style="color:'+theme.accent+'">'+fmtDur(stats.totalDriveMin)+'</span><span class="stat-label">'+(isLive?"Live drive time":"Est. total drive time")+'</span></div>';
+  html += '<div class="stat-card"><span class="stat-num" style="color:'+theme.accent+'">'+(stats.totalKm?("~"+stats.totalKm+" km"):"—")+'</span><span class="stat-label">'+(isLive?"Distance (Google Maps)":"Est. distance covered")+'</span></div>';
+  html += '<div class="stat-card"><span class="stat-num" style="color:'+theme.accent+'">'+stats.totalBreaks+'</span><span class="stat-label">Break stops planned</span></div>';
+  html += '<div class="stat-card"><span class="stat-num" style="color:'+theme.accent+'">'+trip.travelers+'</span><span class="stat-label">Traveler'+(trip.travelers>1?"s":"")+'</span></div>';
+  html += '</div>';
+
+  html += '<p class="review-label" style="margin-bottom:8px;">Interests, in priority order</p>';
+  html += '<div class="interest-pill-row">';
+  (trip.interests||[]).forEach(function(k, i){
+    html += '<span class="interest-pill" style="background:'+theme.accentBg+'; color:'+theme.accent+'">'+(i+1)+'. '+INTEREST_LABELS[k]+'</span>';
+  });
+  if(!trip.interests || !trip.interests.length) html += '<span class="interest-pill">No interests set</span>';
+  html += '</div>';
+
+  html += '<p class="empty-note" style="padding-top:0;">'+
+    (isLive
+      ? "Drive time and distance use Google Maps traffic-aware routing at the time this trip was generated. Traffic conditions may change by the time you travel."
+      : "Drive time and distance are estimated from straight-line distance between known locations, not live traffic — add a Google Maps API key in Profile for live traffic-aware numbers.")+
+    '</p>';
+
+  html += '<div class="tl-actions">';
+  html += '<button class="tl-action-btn" data-action="print-itinerary">Print</button>';
+  html += '<button class="tl-action-btn primary" style="background:'+theme.accent+'; border-color:'+theme.accent+';" data-action="export-pdf">Export PDF</button>';
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+/* ============================================================
+   MAIN RENDER
+============================================================ */
+function render(){
+  var screenEl = document.getElementById("screen");
+  var navEl = document.getElementById("navbar");
+  var html = "";
+  if(state.screen==="home") html = renderHome();
+  else if(state.screen==="wizard") html = renderWizard();
+  else if(state.screen==="timeline") html = renderTimeline();
+  else if(state.screen==="trips") html = renderTripsList();
+  else if(state.screen==="explore") html = renderExplore();
+  else if(state.screen==="profile") html = renderProfile();
+  else if(state.screen==="summary") html = renderSummary();
+  else if(state.screen==="generating") html = renderGenerating();
+  screenEl.innerHTML = html;
+  navEl.innerHTML = renderNavbar();
+  screenEl.scrollTop = 0;
+}
+
+/* ============================================================
+   EVENTS
+============================================================ */
+document.getElementById("screen").addEventListener("click", handleClick);
+document.getElementById("navbar").addEventListener("click", handleClick);
+document.getElementById("screen").addEventListener("input", handleInput);
+
+function handleInput(e){
+  var t = e.target;
+  var field = t.getAttribute("data-field");
+  if(!field) return;
+  if(field==="exploreQuery"){
+    state.exploreQuery = t.value;
+    var gridEl = document.getElementById("explore-grid");
+    if(gridEl) gridEl.innerHTML = renderExploreGridItems();
+    return;
+  }
+  if(!state.wizard) return;
+  var d = state.wizard.data;
+  if(field==="age"){
+    var idx = +t.getAttribute("data-idx");
+    d.ages[idx] = t.value === "" ? null : (+t.value);
+  } else if(t.type==="number"){
+    d[field] = t.value===""?"":(+t.value);
+  } else {
+    d[field] = t.value;
+    if(t.getAttribute("data-ac")==="1"){
+      d[PLACE_FIELD_MAP[field]] = null;
+      scheduleAutocomplete(field, t.value);
+    }
+  }
+  // no re-render — avoids losing focus while typing
+}
+
+/* ---------- Places autocomplete dropdown wiring ---------- */
+var acDebounceTimers = {};
+var acSessionTokens = {};
+function scheduleAutocomplete(field, text){
+  clearTimeout(acDebounceTimers[field]);
+  var listEl = document.getElementById("ac-list-"+field);
+  if(!listEl) return;
+  if(!hasMapsKey() || !text || text.trim().length<2){
+    listEl.classList.remove("show");
+    listEl.innerHTML = "";
+    return;
+  }
+  acDebounceTimers[field] = setTimeout(function(){
+    if(!acSessionTokens[field]) acSessionTokens[field] = uid();
+    placesAutocomplete(text, acSessionTokens[field]).then(function(suggestions){
+      renderAutocompleteList(field, suggestions);
+    });
+  }, 300);
+}
+function renderAutocompleteList(field, suggestions){
+  var listEl = document.getElementById("ac-list-"+field);
+  if(!listEl) return;
+  if(!suggestions.length){ listEl.classList.remove("show"); listEl.innerHTML = ""; return; }
+  listEl.innerHTML = suggestions.map(function(s){
+    return '<div class="ac-item" data-action="pick-place" data-field="'+field+'" data-place-id="'+esc(s.placeId)+'" data-text="'+esc(s.text)+'">'+esc(s.text)+'</div>';
+  }).join("");
+  listEl.classList.add("show");
+}
+document.addEventListener("click", function(e){
+  if(e.target.closest(".ac-field")) return;
+  document.querySelectorAll(".ac-list.show").forEach(function(el){
+    el.classList.remove("show");
+    el.innerHTML = "";
+  });
+});
+
+function handleClick(e){
+  var el = e.target.closest("[data-action]");
+  if(!el) return;
+  var action = el.getAttribute("data-action");
+
+  if(action==="nav"){
+    var target = el.getAttribute("data-target");
+    state.screen = target;
+    state.moreMenuOpen = false;
+    render();
+  }
+  else if(action==="start-wizard"){
+    state.wizard = newWizard();
+    state.screen = "wizard";
+    render();
+  }
+  else if(action==="explore-dest"){
+    state.wizard = newWizard(el.getAttribute("data-name"));
+    state.screen = "wizard";
+    render();
+  }
+  else if(action==="explore-filter"){
+    state.exploreFilter = el.getAttribute("data-value");
+    render();
+  }
+  else if(action==="wizard-back-top"){
+    if(state.wizard.step===0){ state.wizard=null; state.screen="home"; }
+    else { state.wizard.step--; }
+    render();
+  }
+  else if(action==="wizard-prev"){
+    state.wizard.step = Math.max(0, state.wizard.step-1);
+    render();
+  }
+  else if(action==="wizard-next"){
+    state.wizard.step = Math.min(STEPS.length-1, state.wizard.step+1);
+    render();
+  }
+  else if(action==="wizard-generate"){
+    submitWizard();
+  }
+  else if(action==="chip"){
+    var field2 = el.getAttribute("data-field");
+    var value = el.getAttribute("data-value");
+    var multi = el.getAttribute("data-multi")==="1";
+    var d2 = state.wizard.data;
+    if(multi){
+      var arr = d2[field2];
+      var idx2 = arr.indexOf(value);
+      if(idx2===-1) arr.push(value); else arr.splice(idx2,1);
+    } else {
+      d2[field2] = value;
+    }
+    render();
+  }
+  else if(action==="travelers-inc"){
+    var d3 = state.wizard.data;
+    d3.travelers = Math.min(10, d3.travelers+1);
+    while(d3.ages.length < d3.travelers) d3.ages.push(30);
+    render();
+  }
+  else if(action==="travelers-dec"){
+    var d4 = state.wizard.data;
+    d4.travelers = Math.max(1, d4.travelers-1);
+    d4.ages = d4.ages.slice(0, d4.travelers);
+    render();
+  }
+  else if(action==="open-trip"){
+    state.currentTripId = el.getAttribute("data-id");
+    state.activeDay = 0;
+    state.screen = "timeline";
+    state.moreMenuOpen = false;
+    render();
+  }
+  else if(action==="set-day"){
+    state.activeDay = +el.getAttribute("data-idx");
+    render();
+  }
+  else if(action==="toggle-more"){
+    state.moreMenuOpen = !state.moreMenuOpen;
+    render();
+  }
+  else if(action==="delete-trip"){
+    var id = el.getAttribute("data-id");
+    if(confirm("Delete this trip? This can't be undone.")){
+      state.trips = state.trips.filter(function(t){ return t.id!==id; });
+      saveTrips(state.trips);
+      state.screen = "home";
+    }
+    state.moreMenuOpen = false;
+    render();
+  }
+  else if(action==="clear-all"){
+    if(confirm("Delete all saved trips from this browser?")){
+      state.trips = [];
+      saveTrips(state.trips);
+      render();
+    }
+  }
+  else if(action==="export-pdf"){
+    exportTripPDF();
+  }
+  else if(action==="print-itinerary"){
+    printItinerary();
+  }
+  else if(action==="pick-place"){
+    if(!state.wizard) return;
+    var field5 = el.getAttribute("data-field");
+    var placeId5 = el.getAttribute("data-place-id");
+    var text5 = el.getAttribute("data-text");
+    var d5 = state.wizard.data;
+    d5[field5] = text5;
+    var listEl3 = document.getElementById("ac-list-"+field5);
+    if(listEl3){ listEl3.classList.remove("show"); listEl3.innerHTML=""; }
+    var inputEl = document.querySelector('input[data-field="'+field5+'"]');
+    if(inputEl) inputEl.value = text5;
+    var token5 = acSessionTokens[field5];
+    delete acSessionTokens[field5];
+    placeDetails(placeId5, token5).then(function(details){
+      if(details) d5[PLACE_FIELD_MAP[field5]] = {placeId:placeId5, text:text5, lat:details.lat, lng:details.lng};
+    });
+  }
+  else if(action==="save-maps-key"){
+    var keyInput = document.getElementById("maps-key-input");
+    setMapsKey(keyInput ? keyInput.value : "");
+    render();
+  }
+}
+
+function submitWizard(){
+  var d = state.wizard.data;
+  if(!d.destination || !d.startDate || !d.endDate){ return; }
+  var trip = {
+    id: uid(),
+    title: capitalize(d.destination)+" Trip",
+    destination: d.destination, destinationPlace: d.destinationPlace,
+    startDate: d.startDate, endDate: d.endDate,
+    departureLocation: d.departureLocation, departurePlace: d.departurePlace, departureTime: d.departureTime,
+    returnLocation: d.returnLocation, returnPlace: d.returnPlace, returnTime: d.returnTime,
+    intention: d.intention,
+    travelers: d.travelers, ages: d.ages.map(function(a){ return a==null?30:a; }),
+    goals: d.goals,
+    foodPrefs: d.foodPrefs, foodAllergies: d.foodAllergies,
+    stayType: d.stayType, stayNotes: d.stayNotes,
+    interests: d.interests,
+    createdAt: Date.now()
+  };
+  state.wizard = null;
+  state.screen = "generating";
+  render();
+  generateItinerary(trip).then(function(built){
+    trip.days = built.days;
+    trip.stats = built.stats;
+    trip.routingSource = built.routingSource;
+    state.trips.push(trip);
+    saveTrips(state.trips);
+    state.currentTripId = trip.id;
+    state.activeDay = 0;
+    state.screen = "timeline";
+    render();
+  }).catch(function(err){
+    console.error("Itinerary generation failed", err);
+    alert("Something went wrong building the itinerary. Please try again.");
+    state.wizard = newWizard(d.destination);
+    state.wizard.data = d;
+    state.screen = "wizard";
+    render();
+  });
+}
+
+/* ============================================================
+   PDF EXPORT
+============================================================ */
+function printItinerary(){
+  var trip = state.trips.find(function(t){ return t.id===state.currentTripId; });
+  if(!trip) return;
+  var area = document.getElementById("print-area");
+  var html = '<p class="p-title">'+esc(trip.title)+'</p>';
+  html += '<p class="p-dates">'+fmtDateShort(trip.startDate)+' – '+fmtDateShort(trip.endDate)+' · '+trip.days.length+' day(s) · '+trip.travelers+' traveler(s)</p>';
+  trip.days.forEach(function(day){
+    html += '<p class="p-day">'+day.label+' — '+fmtDateShort(day.date)+'</p>';
+    day.items.forEach(function(item){
+      var t = fmtClock(item.time);
+      html += '<div class="p-item">';
+      html += '<div class="p-time">'+t.hm+' '+t.ap+'</div>';
+      html += '<div class="p-icon">'+categoryIcon(item.category)+'</div>';
+      html += '<div class="p-body"><p class="p-cat">'+esc(item.category)+'</p><p class="p-item-title">'+esc(item.title)+'</p><p class="p-item-sub">'+esc(item.subtitle)+'</p></div>';
+      html += '</div>';
+    });
+  });
+  area.innerHTML = html;
+  setTimeout(function(){ window.print(); }, 60);
+}
+
+function exportTripPDF(){
+  var trip = state.trips.find(function(t){ return t.id===state.currentTripId; });
+  if(!trip) return;
+  try{
+    var jsPDFCtor = window.jspdf ? window.jspdf.jsPDF : null;
+    if(!jsPDFCtor){ fallbackPrint(trip); return; }
+    var doc = new jsPDFCtor({unit:"pt", format:"a4"});
+    var pageW = doc.internal.pageSize.getWidth();
+    var margin = 48, y = margin;
+
+    doc.setFont("helvetica","bold"); doc.setFontSize(20);
+    doc.text(trip.title, margin, y); y += 22;
+    doc.setFont("helvetica","normal"); doc.setFontSize(11); doc.setTextColor(110,105,95);
+    doc.text(fmtDateShort(trip.startDate)+" - "+fmtDateShort(trip.endDate)+" | "+trip.days.length+" day(s)", margin, y);
+    doc.setTextColor(30,27,22);
+    y += 22;
+
+    var stats = getTripStats(trip);
+    doc.setFont("helvetica","bold"); doc.setFontSize(10.5); doc.setTextColor(90,85,75);
+    var summaryLine = "Est. drive time: "+fmtDur(stats.totalDriveMin)+"   |   Est. distance: "+(stats.totalKm?("~"+stats.totalKm+" km"):"n/a")+"   |   Breaks planned: "+stats.totalBreaks+"   |   Travelers: "+trip.travelers;
+    doc.text(summaryLine, margin, y);
+    doc.setTextColor(30,27,22);
+    y += 24;
+
+    trip.days.forEach(function(day){
+      if(y > 730){ doc.addPage(); y = margin; }
+      doc.setFont("helvetica","bold"); doc.setFontSize(14);
+      doc.text(day.label+" - "+fmtDateShort(day.date), margin, y); y += 18;
+      doc.setDrawColor(220,213,196); doc.line(margin, y-8, pageW-margin, y-8);
+
+      day.items.forEach(function(item){
+        if(y > 760){ doc.addPage(); y = margin; }
+        var t = fmtClock(item.time);
+        doc.setFont("helvetica","bold"); doc.setFontSize(10);
+        doc.text(t.hm+" "+t.ap, margin, y);
+        doc.setFont("helvetica","bold"); doc.setFontSize(9);
+        doc.text(item.category, margin+70, y);
+        y += 13;
+        doc.setFont("helvetica","bold"); doc.setFontSize(11.5);
+        var titleLines = doc.splitTextToSize(item.title, pageW-2*margin-70);
+        doc.text(titleLines, margin+70, y);
+        y += titleLines.length*13;
+        doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(120,114,101);
+        var subLines = doc.splitTextToSize(item.subtitle||"", pageW-2*margin-70);
+        doc.text(subLines, margin+70, y);
+        doc.setTextColor(30,27,22);
+        y += subLines.length*12 + 12;
+      });
+      y += 6;
+    });
+
+    var blob = doc.output("blob");
+    var filename = trip.title.replace(/[^a-z0-9]+/gi,"_")+".pdf";
+
+    if(window.claude && window.claude.use){
+      window.claude.use("downloads").then(function(downloads){
+        if(!downloads){ triggerBlobFallback(blob, filename); return; }
+        downloads.save({filename:filename, data:blob}).catch(function(err){
+          if(err && err.code!=="declined"){ triggerBlobFallback(blob, filename); }
+        });
+      }).catch(function(){ triggerBlobFallback(blob, filename); });
+    } else {
+      triggerBlobFallback(blob, filename);
+    }
+  } catch(e){
+    fallbackPrint(trip);
+  }
+}
+function triggerBlobFallback(blob, filename){
+  try{
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+  }catch(e){}
+}
+function fallbackPrint(trip){
+  window.print();
+}
+
+/* ============================================================
+   INIT
+============================================================ */
+render();
+</script>
+</body>
+</html>
