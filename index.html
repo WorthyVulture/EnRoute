@@ -502,6 +502,8 @@ var THEME_MAP = {
   "heritage":{key:"heritage", heroFrom:"var(--heritage-hero)", heroTo:"var(--heritage-hero-2)", accent:"var(--heritage)", accentBg:"var(--tan-badge)", motif:"arch"}
 };
 var DEFAULT_THEME = {key:"coral", heroFrom:"var(--coral)", heroTo:"var(--coral-dark)", accent:"var(--coral)", accentBg:"var(--coral-bg)", motif:"sun"};
+var THEME_EMOJI = {blue:"🌊", green:"🍃", nature:"🌳", wildlife:"🐾", heritage:"🏛️", coral:"🧭"};
+function themeEmoji(key){ return THEME_EMOJI[key] || "🧭"; }
 
 var INTEREST_LABELS = {"nature":"Nature","heritage":"Heritage","beaches":"Beaches","tea-estates":"Tea estates","wildlife":"Wildlife"};
 var INTENTION_LABELS = {"leisure":"Leisure","work":"Work","food-hunt":"Food hunt","exploration":"Exploration"};
@@ -595,12 +597,21 @@ function mapsDirectionsLink(waypoints){
 
 /* A simple, not-to-scale route diagram — plots real lat/lon in an equirectangular
    projection scaled to fit the trip's own bounding box. No Maps Static API needed. */
-function buildRouteMapSVG(waypoints, width, height){
+function buildRouteMapSVG(waypoints, routePolylines, width, height){
   var pts = (waypoints||[]).filter(function(w){ return typeof w.lat==="number" && typeof w.lon==="number"; });
   if(pts.length<2) return "";
   width = width||600; height = height||380;
   var pad = 34;
-  var lats = pts.map(function(p){return p.lat;}), lons = pts.map(function(p){return p.lon;});
+
+  // Real road-following points when we have them (live routes), else a straight line
+  // between the named stops as a fallback for offline/estimated trips.
+  var pathPoints = [];
+  (routePolylines||[]).forEach(function(seg){ if(seg && seg.length) pathPoints = pathPoints.concat(seg); });
+  var hasRealPath = pathPoints.length>1;
+  if(!hasRealPath) pathPoints = pts.map(function(p){ return {lat:p.lat, lon:p.lon}; });
+
+  var boundsPoints = pathPoints.concat(pts);
+  var lats = boundsPoints.map(function(p){return p.lat;}), lons = boundsPoints.map(function(p){return p.lon;});
   var minLat=Math.min.apply(null,lats), maxLat=Math.max.apply(null,lats);
   var minLon=Math.min.apply(null,lons), maxLon=Math.max.apply(null,lons);
   function project(p){
@@ -608,11 +619,33 @@ function buildRouteMapSVG(waypoints, width, height){
     var y = maxLat===minLat ? height/2 : pad+(maxLat-p.lat)/(maxLat-minLat)*(height-2*pad);
     return {x:x,y:y};
   }
+
+  var pathCoords = pathPoints.map(project);
+  var pathD = pathCoords.map(function(c,i){ return (i===0?"M":"L")+c.x.toFixed(1)+","+c.y.toFixed(1); }).join(" ");
+
+  var svg = '<svg viewBox="0 0 '+width+' '+height+'" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; display:block;">';
+  svg += '<path d="'+pathD+'" fill="none" stroke="'+(hasRealPath?"#B3A88A":"#C7B896")+'" stroke-width="2.5"'+(hasRealPath?"":' stroke-dasharray="7 5"')+'/>';
+
+  // Real km markers along the actual road, at roughly 1/4, 1/2 and 3/4 of the distance driven.
+  if(hasRealPath){
+    var cum = [0];
+    for(var i=1;i<pathPoints.length;i++){
+      cum.push(cum[i-1] + haversineKm(pathPoints[i-1].lat,pathPoints[i-1].lon,pathPoints[i].lat,pathPoints[i].lon));
+    }
+    var total = cum[cum.length-1];
+    if(total>40){
+      [0.25,0.5,0.75].forEach(function(frac){
+        var targetDist = total*frac, idx = 0;
+        while(idx<cum.length-1 && cum[idx]<targetDist) idx++;
+        var c = project(pathPoints[idx]);
+        svg += '<circle cx="'+c.x.toFixed(1)+'" cy="'+c.y.toFixed(1)+'" r="2.5" fill="#9C9284"/>';
+        svg += '<text x="'+c.x.toFixed(1)+'" y="'+(c.y-9).toFixed(1)+'" font-size="9.5" text-anchor="middle" fill="#6B6154" font-family="Inter,Helvetica,sans-serif">'+Math.round(cum[idx])+' km</text>';
+      });
+    }
+  }
+
   var roleColor = {origin:"#3C5A45", stopover:"#8B5E34", destination:"#D9553A", detour:"#1F6E86", "return":"#3C5A45"};
   var coords = pts.map(project);
-  var pathD = coords.map(function(c,i){ return (i===0?"M":"L")+c.x.toFixed(1)+","+c.y.toFixed(1); }).join(" ");
-  var svg = '<svg viewBox="0 0 '+width+' '+height+'" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; display:block;">';
-  svg += '<path d="'+pathD+'" fill="none" stroke="#C7B896" stroke-width="2.5" stroke-dasharray="7 5"/>';
   coords.forEach(function(c,i){
     var color = roleColor[pts[i].role] || "#D9553A";
     svg += '<circle cx="'+c.x.toFixed(1)+'" cy="'+c.y.toFixed(1)+'" r="6.5" fill="'+color+'" stroke="#FBF4E8" stroke-width="2"/>';
@@ -797,6 +830,23 @@ function nearbyRestaurants(lat, lon, radiusMeters){
 /* Google's Routes API has no clean "highway name" field — the closest real signal is the
    turn-by-turn step instructions. Take the single longest step (almost always the main
    highway stretch) and pull a road name out of its instruction text on a best-effort basis. */
+/* Standard Google encoded-polyline decode — turns the route's polyline string into
+   real lat/lon points following the actual road, for drawing a true route shape. */
+function decodePolyline(encoded){
+  var points = [], index = 0, len = (encoded||"").length, lat = 0, lng = 0;
+  while(index < len){
+    var b, shift = 0, result = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while(b >= 0x20);
+    var dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+    lat += dlat;
+    shift = 0; result = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while(b >= 0x20);
+    var dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+    lng += dlng;
+    points.push({lat: lat/1e5, lon: lng/1e5});
+  }
+  return points;
+}
 function extractPrimaryRoad(route){
   var steps = [];
   (route.legs||[]).forEach(function(leg){ (leg.steps||[]).forEach(function(s){ steps.push(s); }); });
@@ -818,7 +868,7 @@ function computeRoute(originLat, originLon, destLat, destLon){
     method:"POST",
     headers:{
       "Content-Type":"application/json", "X-Goog-Api-Key":key,
-      "X-Goog-FieldMask":"routes.duration,routes.distanceMeters,routes.staticDuration,routes.travelAdvisory.tollInfo,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters"
+      "X-Goog-FieldMask":"routes.duration,routes.distanceMeters,routes.staticDuration,routes.travelAdvisory.tollInfo,routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters,routes.polyline.encodedPolyline"
     },
     body: JSON.stringify({
       origin:{location:{latLng:{latitude:originLat, longitude:originLon}}},
@@ -837,7 +887,8 @@ function computeRoute(originLat, originLon, destLat, destLon){
       distanceMeters: route.distanceMeters,
       tollUnits: tollPrice ? (parseInt(tollPrice.units||0,10) + (tollPrice.nanos||0)/1e9) : null,
       tollCurrency: tollPrice ? tollPrice.currencyCode : null,
-      viaRoad: extractPrimaryRoad(route)
+      viaRoad: extractPrimaryRoad(route),
+      polyline: route.polyline && route.polyline.encodedPolyline ? decodePolyline(route.polyline.encodedPolyline) : null
     };
   }).catch(function(){ return null; });
 }
@@ -865,11 +916,11 @@ function estimateDriveMinutes(originGeo, destGeo){
 function resolveRouting(originGeo, destGeo){
   var fallbackKm = (originGeo && destGeo) ? haversineKm(originGeo.lat,originGeo.lon,destGeo.lat,destGeo.lon)*1.32 : null;
   var fallbackMin = estimateDriveMinutes(originGeo, destGeo);
-  var fallback = {km:fallbackKm, min:fallbackMin, source:"estimated", tollUnits:null, tollCurrency:null, viaRoad:null};
+  var fallback = {km:fallbackKm, min:fallbackMin, source:"estimated", tollUnits:null, tollCurrency:null, viaRoad:null, polyline:null};
   if(!originGeo || !destGeo || !hasMapsKey()) return Promise.resolve(fallback);
   return computeRoute(originGeo.lat, originGeo.lon, destGeo.lat, destGeo.lon).then(function(res){
     if(!res) return fallback;
-    return {km: res.distanceMeters/1000, min: Math.max(1,Math.round(res.durationSec/60)), source:"live", tollUnits:res.tollUnits, tollCurrency:res.tollCurrency, viaRoad:res.viaRoad};
+    return {km: res.distanceMeters/1000, min: Math.max(1,Math.round(res.durationSec/60)), source:"live", tollUnits:res.tollUnits, tollCurrency:res.tollCurrency, viaRoad:res.viaRoad, polyline:res.polyline};
   });
 }
 
@@ -1288,7 +1339,14 @@ function generateItinerary(trip){
         destinationAreaItems.forEach(function(item){ waypoints.push({lat:item.lat, lon:item.lon, label:item.title, role:item.category.toLowerCase()}); });
         if(returnGeo) waypoints.push({lat:returnGeo.lat, lon:returnGeo.lon, label:trip.returnLocation||trip.departureLocation||"Home", role:"return"});
 
-        return {days: days, stats: stats, routingSource: routingSource, foodSource: realFoodUsed ? "live" : "none", waypoints: waypoints};
+        // Real road-following polylines for each leg actually driven, in trip order —
+        // used to draw the route diagram as the real road shape instead of a straight line.
+        var routePolylines = [];
+        if(preRouting && preRouting.polyline) routePolylines.push(preRouting.polyline);
+        if(outboundRouting.polyline) routePolylines.push(outboundRouting.polyline);
+        if(backRouting.polyline) routePolylines.push(backRouting.polyline);
+
+        return {days: days, stats: stats, routingSource: routingSource, foodSource: realFoodUsed ? "live" : "none", waypoints: waypoints, routePolylines: routePolylines};
       });
     });
   });
@@ -1307,7 +1365,7 @@ var state = {
   wizard: null,
   exploreQuery: "",
   exploreFilter: "all",
-  farFinder: {hours:4, origin:"", results:null}
+  farFinder: {hours:8, origin:"", results:null}
 };
 
 var STEPS = ["basics","window","intention","travelers","goals","food","stay","interests","review"];
@@ -1564,7 +1622,14 @@ function renderHome(){
     var daysAway = diffDaysISO(todayISO(), upcoming.startDate);
     var badge = daysAway>1 ? "In "+daysAway+" days" : (daysAway===1?"Tomorrow":(daysAway===0?"Today":"Started"));
     html += '<div class="upcoming-card" data-action="open-trip" data-id="'+upcoming.id+'">';
-    html += '<div class="hero-ph" style="background:'+heroGrad(theme)+'">'+heroMotif(theme.motif)+'</div>';
+    var upcomingPhoto = upcoming.destinationPlace && upcoming.destinationPlace.photoUrl;
+    if(upcomingPhoto){
+      html += '<div class="hero-ph" style="background-image:linear-gradient(rgba(0,0,0,0.12),rgba(0,0,0,0.45)),url(\''+upcomingPhoto+'\'); background-size:cover; background-position:center; position:relative;">'+
+        '<span style="position:absolute; bottom:14px; right:14px; width:38px; height:38px; border-radius:50%; background:'+theme.accent+'; display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:0 4px 10px rgba(0,0,0,0.25);">'+themeEmoji(theme.key)+'</span>'+
+        '</div>';
+    } else {
+      html += '<div class="hero-ph" style="background:'+heroGrad(theme)+'">'+heroMotif(theme.motif)+'</div>';
+    }
     html += '<div class="upcoming-body"><div class="upcoming-row"><div><p class="upcoming-title">'+esc(upcoming.title)+'</p><p class="upcoming-sub">'+fmtDateShort(upcoming.startDate)+' – '+fmtDateShort(upcoming.endDate)+' · '+upcoming.days.length+' day'+(upcoming.days.length>1?"s":"")+'</p></div><span class="badge">'+badge+'</span></div></div>';
     html += '</div>';
   } else {
@@ -1591,8 +1656,14 @@ function imgPlaceholderIcon(){
 }
 function tripRowHTML(t){
   var theme = themeFor(t);
+  var photo = t.destinationPlace && t.destinationPlace.photoUrl;
+  var thumbBg = photo
+    ? "background-image:linear-gradient(rgba(0,0,0,0.32),rgba(0,0,0,0.32)),url('"+photo+"'); background-size:cover; background-position:center;"
+    : "background:"+heroGrad(theme)+";";
   return '<div class="trip-row" data-action="open-trip" data-id="'+t.id+'">'+
-    '<div class="trip-thumb" style="background:'+heroGrad(theme)+'"></div>'+
+    '<div class="trip-thumb" style="'+thumbBg+' position:relative;">'+
+      '<span style="position:absolute; bottom:-4px; right:-4px; width:22px; height:22px; border-radius:50%; background:'+theme.accent+'; display:flex; align-items:center; justify-content:center; font-size:11px; border:2px solid var(--cream); line-height:1;">'+themeEmoji(theme.key)+'</span>'+
+    '</div>'+
     '<div><p class="trip-row-title">'+esc(t.title)+'</p><p class="trip-row-sub">'+fmtDateShort(t.startDate)+' – '+fmtDateShort(t.endDate)+'</p></div>'+
     '<span class="chevron"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>'+
     '</div>';
@@ -1911,6 +1982,7 @@ function renderTimeline(){
   if(trip.destinationPlace && trip.destinationPlace.photoUrl){
     html += '<img src="'+esc(trip.destinationPlace.photoUrl)+'" alt="" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">';
     html += '<div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.1), rgba(0,0,0,0.35));"></div>';
+    html += '<span style="position:absolute; bottom:16px; right:16px; width:40px; height:40px; border-radius:50%; background:'+theme.accent+'; display:flex; align-items:center; justify-content:center; font-size:19px; box-shadow:0 4px 10px rgba(0,0,0,0.25); z-index:2;">'+themeEmoji(theme.key)+'</span>';
   } else {
     html += heroMotif(theme.motif);
   }
@@ -2001,7 +2073,7 @@ function renderSummary(){
   html += '<div class="route-node"><div class="route-dot" style="background:'+theme.accent+'"></div><span class="route-label">'+esc(trip.returnLocation||trip.departureLocation||"Home")+'</span></div>';
   html += '</div>';
 
-  var routeSVG = buildRouteMapSVG(trip.waypoints);
+  var routeSVG = buildRouteMapSVG(trip.waypoints, trip.routePolylines);
   if(routeSVG){
     html += '<div class="review-block" style="padding:14px;">'+routeSVG+'</div>';
   }
@@ -2376,13 +2448,23 @@ function handleClick(e){
       state.farFinder.results = [];
     } else {
       var budgetMin = state.farFinder.hours*60;
-      state.farFinder.results = FEATURED.map(function(name){
+      // Search the full known-places list, not just the small Explore "featured" set —
+      // that was the bug: featured has only 7 entries, so most origin/hour combos found nothing.
+      var seenDestNames = {};
+      var allDestNames = [];
+      Object.keys(DESTS).forEach(function(k){
+        var nm = DESTS[k].name;
+        if(!seenDestNames[nm]){ seenDestNames[nm]=true; allDestNames.push(nm); }
+      });
+      state.farFinder.results = allDestNames.map(function(name){
         var destGeoFF = findDest(name);
         if(!destGeoFF) return null;
+        var kmFF = haversineKm(originGeoFF.lat,originGeoFF.lon,destGeoFF.lat,destGeoFF.lon)*1.32;
+        if(kmFF < 20) return null; // skip "you're basically already there"
         var oneWayMin = estimateDriveMinutes(originGeoFF, destGeoFF);
         if(oneWayMin*2 > budgetMin) return null;
-        return {name:name, oneWayMin:oneWayMin, km:Math.round(haversineKm(originGeoFF.lat,originGeoFF.lon,destGeoFF.lat,destGeoFF.lon)*1.32)};
-      }).filter(Boolean).sort(function(a,b){ return a.oneWayMin-b.oneWayMin; });
+        return {name:name, oneWayMin:oneWayMin, km:Math.round(kmFF)};
+      }).filter(Boolean).sort(function(a,b){ return a.oneWayMin-b.oneWayMin; }).slice(0,12);
     }
     render();
   }
@@ -2440,6 +2522,7 @@ function submitWizard(){
     trip.routingSource = built.routingSource;
     trip.foodSource = built.foodSource;
     trip.waypoints = built.waypoints;
+    trip.routePolylines = built.routePolylines;
     state.trips.push(trip);
     saveTrips(state.trips);
     state.currentTripId = trip.id;
@@ -2466,7 +2549,7 @@ function printItinerary(){
   var area = document.getElementById("print-area");
   var html = '<p class="p-title">'+esc(trip.title)+'</p>';
   html += '<p class="p-dates">'+fmtDateShort(trip.startDate)+' – '+fmtDateShort(trip.endDate)+' · '+trip.days.length+' day(s) · '+trip.travelers+' traveler(s)</p>';
-  var printRouteSVG = buildRouteMapSVG(trip.waypoints, 700, 320);
+  var printRouteSVG = buildRouteMapSVG(trip.waypoints, trip.routePolylines, 700, 320);
   if(printRouteSVG) html += '<div style="margin:10px 0 18px; max-width:500px;">'+printRouteSVG+'</div>';
   trip.days.forEach(function(day){
     html += '<p class="p-day">'+day.label+' — '+fmtDateShort(day.date)+'</p>';
