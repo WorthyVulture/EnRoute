@@ -1365,7 +1365,7 @@ var state = {
   wizard: null,
   exploreQuery: "",
   exploreFilter: "all",
-  farFinder: {hours:8, origin:"", results:null}
+  farFinder: {hours:8, origin:"", originPlace:null, results:null}
 };
 
 var STEPS = ["basics","window","intention","travelers","goals","food","stay","interests","review"];
@@ -1755,7 +1755,7 @@ function renderFarFinder(){
   html += '</div>';
   html += '<div class="px">';
   html += '<p class="wizard-sub" style="margin-bottom:20px;">Tell us how much time you have and where from — we\'ll suggest destinations that fit, round trip.</p>';
-  html += '<div class="field"><label>Starting from</label><input type="text" data-field="farOrigin" value="'+esc(ff.origin)+'" placeholder="e.g. Bangalore"></div>';
+  html += fieldPlaceAutocomplete("Starting from", "farOrigin", ff.origin, "e.g. Bangalore");
   html += '<div class="field"><label>Hours available (round trip driving)</label><div class="stepper-row">';
   html += '<button class="stepper-btn" data-action="farfinder-dec">−</button><span style="font-size:18px; font-weight:700; width:36px; text-align:center;">'+ff.hours+'h</span><button class="stepper-btn" data-action="farfinder-inc">+</button>';
   html += '</div></div>';
@@ -1767,8 +1767,9 @@ function renderFarFinder(){
 }
 function renderFarFinderResults(){
   var ff = state.farFinder;
+  if(ff.results==="loading") return '<p class="empty-note">Searching…</p>';
   if(!ff.results) return "";
-  if(!ff.results.length) return '<p class="empty-note">Nothing reachable in that time from a recognised location — try a nearby larger city name, or more hours.</p>';
+  if(!ff.results.length) return '<p class="empty-note">Nothing reachable in that time from that location — try more hours, or check the spelling.</p>';
   var html = '<div class="explore-grid">';
   ff.results.forEach(function(r){
     var theme = THEME_MAP[destDominantTag(r.name)] || DEFAULT_THEME;
@@ -2182,6 +2183,8 @@ function handleInput(e){
   }
   if(field==="farOrigin"){
     state.farFinder.origin = t.value;
+    state.farFinder.originPlace = null;
+    scheduleAutocomplete(field, t.value);
     return;
   }
   if(!state.wizard) return;
@@ -2380,18 +2383,25 @@ function handleClick(e){
     printItinerary();
   }
   else if(action==="pick-place"){
-    if(!state.wizard) return;
     var field5 = el.getAttribute("data-field");
     var placeId5 = el.getAttribute("data-place-id");
     var text5 = el.getAttribute("data-text");
-    var d5 = state.wizard.data;
-    d5[field5] = text5;
     var listEl3 = document.getElementById("ac-list-"+field5);
     if(listEl3){ listEl3.classList.remove("show"); listEl3.innerHTML=""; }
     var inputEl = document.querySelector('input[data-field="'+field5+'"]');
     if(inputEl) inputEl.value = text5;
     var token5 = acSessionTokens[field5];
     delete acSessionTokens[field5];
+    if(field5==="farOrigin"){
+      state.farFinder.origin = text5;
+      placeDetails(placeId5, token5).then(function(details){
+        if(details) state.farFinder.originPlace = {placeId:placeId5, text:text5, lat:details.lat, lng:details.lng};
+      });
+      return;
+    }
+    if(!state.wizard) return;
+    var d5 = state.wizard.data;
+    d5[field5] = text5;
     placeDetails(placeId5, token5).then(function(details){
       if(details) d5[PLACE_FIELD_MAP[field5]] = {placeId:placeId5, text:text5, lat:details.lat, lng:details.lng, photoUrl:details.photoUrl||null};
     });
@@ -2443,13 +2453,19 @@ function handleClick(e){
     render();
   }
   else if(action==="farfinder-search"){
-    var originGeoFF = findDest(state.farFinder.origin);
-    if(!originGeoFF){
-      state.farFinder.results = [];
-    } else {
+    state.farFinder.results = "loading";
+    render();
+    // resolvePlaceGeo: prefers a picked autocomplete suggestion, then the static list,
+    // then a live geocode — so typing any real place (not just the ~40 known towns) works.
+    resolvePlaceGeo(state.farFinder.origin, state.farFinder.originPlace).then(function(originGeoFF){
+      if(!originGeoFF){
+        state.farFinder.results = [];
+        render();
+        return;
+      }
       var budgetMin = state.farFinder.hours*60;
       // Search the full known-places list, not just the small Explore "featured" set —
-      // that was the bug: featured has only 7 entries, so most origin/hour combos found nothing.
+      // that was the original bug: featured has only 7 entries, so most combos found nothing.
       var seenDestNames = {};
       var allDestNames = [];
       Object.keys(DESTS).forEach(function(k){
@@ -2465,8 +2481,8 @@ function handleClick(e){
         if(oneWayMin*2 > budgetMin) return null;
         return {name:name, oneWayMin:oneWayMin, km:Math.round(kmFF)};
       }).filter(Boolean).sort(function(a,b){ return a.oneWayMin-b.oneWayMin; }).slice(0,12);
-    }
-    render();
+      render();
+    });
   }
   else if(action==="toggle-packed"){
     var packTrip = state.trips.find(function(t){ return t.id===el.getAttribute("data-trip"); });
